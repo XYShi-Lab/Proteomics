@@ -65,7 +65,7 @@ window.VP = window.VP || {};
       symmetricX: true,
       axisStyle: 'lines',            // 'lines' | 'box' | 'none'
 
-      legend: { show: true, position: 'top-right', showCounts: true, size: 12, float: null },
+      legend: { show: true, position: 'outside-right', showCounts: true, size: 12, float: null },
 
       label: {
         halo: true,
@@ -570,6 +570,15 @@ window.VP = window.VP || {};
       fill: cfg.colors.background, fillOpacity: 1,
       stroke: cfg.colors.grid, strokeWidth: 1,
     });
+    if (state.legendHover) {
+      // Transient, screen-only: exports clear the flag first.
+      surface.rect(bx - 3, by - 3, boxW + 6, boxH + 6, {
+        stroke: '#e8a33c', strokeWidth: 1.2, dash: [4, 3],
+      });
+      for (let i = 0; i < 3; i++) {
+        surface.line(bx + 4, by + 5 + i * 3, bx + 10, by + 5 + i * 3, { stroke: '#c9922f', strokeWidth: 1 });
+      }
+    }
     entries.forEach((e, i) => {
       const cy = by + padBox + i * rowH + size * 0.4;
       surface.markers([{ x: bx + padBox + swatch, y: cy, r: swatch }], {

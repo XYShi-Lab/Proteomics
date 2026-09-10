@@ -33,12 +33,15 @@ window.VP = window.VP || {};
   /**
    * Build the graph.
    * @param {Array} results enrichment rows (need .genes to get edges)
-   * @param {object} opts { maxNodes, minJaccard }
+   * @param {object} opts { maxNodes, minJaccard, colors }
+   *   colors: Map termId -> {color, shape}, so a term already overlaid on the
+   *   volcano keeps the colour it has there.
    */
   function build(results, opts) {
     opts = opts || {};
     const maxNodes = opts.maxNodes || 60;
     const minJ = opts.minJaccard == null ? 0.25 : opts.minJaccard;
+    const colors = opts.colors || null;
 
     const rows = results
       .filter((r) => r && r.name)
@@ -60,7 +63,7 @@ window.VP = window.VP || {};
         hits: r.intersection_size != null ? r.intersection_size : genes.size,
         p,
         score: p > 0 ? -Math.log10(p) : 300,
-        color: sourceColor(r.source),
+        color: (colors && colors.get(r.id) && colors.get(r.id).color) || sourceColor(r.source),
         x: 0, y: 0, vx: 0, vy: 0, r: 6,
       };
     });
@@ -191,10 +194,16 @@ window.VP = window.VP || {};
   function draw(ctx, graph, view, opts) {
     opts = opts || {};
     const dpr = opts.dpr || 1;
+    const light = opts.theme !== 'dark';
+    const bg = opts.background || (light ? '#ffffff' : '#131413');
+    const inkStrong = light ? '#1a1a18' : '#ffffff';
+    const inkSoft = light ? '#55564f' : '#c9cac1';
+    const edgeInk = light ? '0,0,0' : '255,255,255';
+
     const W = ctx.canvas.width / dpr, H = ctx.canvas.height / dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = opts.background || '#131413';
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
     if (!graph || !graph.nodes.length) return;
 
@@ -206,7 +215,7 @@ window.VP = window.VP || {};
     ctx.lineCap = 'round';
     for (const e of graph.edges) {
       const A = graph.nodes[e.a], B = graph.nodes[e.b];
-      ctx.strokeStyle = 'rgba(255,255,255,' + (0.08 + e.w * 0.34).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(' + edgeInk + ',' + (0.12 + e.w * 0.4).toFixed(3) + ')';
       ctx.lineWidth = Math.max(0.6, e.w * 5 * k);
       ctx.beginPath();
       ctx.moveTo(X(A.x), Y(A.y));
@@ -224,7 +233,9 @@ window.VP = window.VP || {};
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.lineWidth = isSel ? 2.5 : (n === opts.hover ? 2 : 1);
-      ctx.strokeStyle = isSel ? '#4ec9b0' : (n === opts.hover ? '#ffffff' : 'rgba(0,0,0,.45)');
+      ctx.strokeStyle = isSel
+        ? (light ? '#111111' : '#4ec9b0')
+        : (n === opts.hover ? inkStrong : (light ? 'rgba(0,0,0,.32)' : 'rgba(0,0,0,.45)'));
       ctx.stroke();
     }
 
@@ -250,10 +261,10 @@ window.VP = window.VP || {};
       if (clash && n !== opts.hover) continue;
       placed.push(box);
       ctx.lineWidth = 3;
-      ctx.strokeStyle = opts.background || '#131413';
+      ctx.strokeStyle = bg;
       ctx.lineJoin = 'round';
       ctx.strokeText(text, cx, cy);
-      ctx.fillStyle = n === opts.hover ? '#ffffff' : '#c9cac1';
+      ctx.fillStyle = n === opts.hover ? inkStrong : inkSoft;
       ctx.fillText(text, cx, cy);
     }
   }

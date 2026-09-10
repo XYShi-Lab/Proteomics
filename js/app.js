@@ -121,7 +121,8 @@ window.VP = window.VP || {};
     organism: 'hsapiens',
     mode: 'pan',
     enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set() },
-    net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25 },
+    net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25, topN: 6, colorMap: new Map() },
+    legendHover: false,
     sourceName: '',
     termHits: [],
   };
@@ -759,9 +760,10 @@ window.VP = window.VP || {};
     return state.view || (state.records.length ? VP.plot.autoDomain(state) : null);
   }
 
-  /* Hit test the legend box, so a floating legend can be dragged into place. */
+  /* Hit test the legend box. Any placement can be grabbed: picking it up simply
+     switches it to floating, which is what people try first. */
   function legendAt(px, py) {
-    if (!state.geom || state.config.legend.position !== 'floating') return null;
+    if (!state.geom || !state.config.legend.show) return null;
     const L = VP.plot.legendLayout(state, state.geom);
     if (!L) return null;
     if (px >= L.bx && px <= L.bx + L.boxW && py >= L.by && py <= L.by + L.boxH) return L;
@@ -814,6 +816,11 @@ window.VP = window.VP || {};
     }
 
     const onLegend = legendAt(p.x, p.y);
+    if (!!onLegend !== state.legendHover) {
+      state.legendHover = !!onLegend;
+      if (state.legendHover) setStatus('Drag the legend to move it anywhere on the figure');
+      render();
+    }
     const hit = onLegend ? null : VP.plot.hitTest(state.index, p.x, p.y);
     const onLabel = !hit && !onLegend && labelAt(p.x, p.y);
     canvas.classList.toggle('on-point', !!hit);
@@ -832,7 +839,11 @@ window.VP = window.VP || {};
     }
   });
 
-  canvas.addEventListener('mouseleave', () => { if (!drag) hideTooltip(); });
+  canvas.addEventListener('mouseleave', () => {
+    if (drag) return;
+    hideTooltip();
+    if (state.legendHover) { state.legendHover = false; render(); }
+  });
 
   canvas.addEventListener('mousedown', (ev) => {
     if (!state.records.length || ev.button !== 0) return;
@@ -840,6 +851,12 @@ window.VP = window.VP || {};
 
     const lg = legendAt(p.x, p.y);
     if (lg) {
+      // Pick it up wherever it was: it becomes free-floating from here.
+      if (state.config.legend.position !== 'floating') {
+        state.config.legend.position = 'floating';
+        state.config.legend.float = { x: lg.bx, y: lg.by };
+        $('#selLegendPos').value = 'floating';
+      }
       drag = { kind: 'legend', dx: p.x - lg.bx, dy: p.y - lg.by, moved: false };
       hideTooltip();
       ev.preventDefault();
@@ -1050,6 +1067,7 @@ window.VP = window.VP || {};
       state.enrich.results = res.results || [];
       state.enrich.provider = res.provider;
       state.enrich.annotated = new Set();
+      assignEnrichColors();
       renderEnrichTable();
       buildNetwork();
       openDrawer(true);
@@ -1093,12 +1111,20 @@ window.VP = window.VP || {};
       const btn = el('button', { class: 'mini' + (on ? ' on' : ''), text: on ? 'on plot' : 'annotate' });
       btn.addEventListener('click', () => annotateTerm(r));
 
+      const assigned = state.net.colorMap.get(r.id);
       const tr = el('tr', { class: on ? 'is-annotated' : '' }, [
         el('td', { class: 'term-cell' }, [
-          el('span', { text: r.name || r.id }),
-          r.genes && r.genes.length
-            ? el('span', { class: 'genes', text: r.genes.slice(0, 24).join(' ') + (r.genes.length > 24 ? ' …+' + (r.genes.length - 24) : '') })
-            : null,
+          el('span', {
+            class: 'tswatch' + (assigned ? '' : ' none'),
+            title: assigned ? 'Shown in this colour on the plot and in the network' : 'Outside the top terms',
+            style: assigned ? 'background:' + assigned.color : '',
+          }),
+          el('div', {}, [
+            el('span', { text: r.name || r.id }),
+            r.genes && r.genes.length
+              ? el('span', { class: 'genes', text: r.genes.slice(0, 24).join(' ') + (r.genes.length > 24 ? ' …+' + (r.genes.length - 24) : '') })
+              : null,
+          ]),
         ]),
         el('td', {}, el('span', { class: 'src', text: r.source || '' })),
         el('td', { class: 'num', text: fmtP(r.p_adjusted != null ? r.p_adjusted : r.p_value) }),
@@ -1130,12 +1156,15 @@ window.VP = window.VP || {};
         toast('This engine did not return the member genes for that term.', 'error');
         return;
       }
+      const assigned = state.net.colorMap.get(r.id);
       const c = addCluster({
         name: r.name || r.id,
         genes: new Set(genes),
         total: genes.length,
         source: r.source || state.enrich.provider,
-      });
+        color: assigned && assigned.color,
+        shape: assigned && assigned.shape,
+      }, true);
       c.termId = r.id;
       state.enrich.annotated.add(r.id);
     }
@@ -1144,6 +1173,7 @@ window.VP = window.VP || {};
     renderClusterList();
     renderEnrichTable();
     renderNetwork();
+    setStatus(state.enrich.annotated.size + ' enriched term(s) shown on the plot');
   }
 
   function openDrawer(open) {
@@ -1169,13 +1199,52 @@ window.VP = window.VP || {};
 
   /* ======================= pathway network ======================= */
 
+  /**
+   * Give the top-N enriched terms a colour each, and make everything agree:
+   * a term already overlaid on the volcano keeps that cluster's colour, and
+   * anything new takes the next free slot in the cluster palette.
+   */
+  function assignEnrichColors() {
+    const map = new Map();
+    const used = new Set();
+    const ranked = state.enrich.results.slice().sort((a, b) =>
+      (a.p_adjusted != null ? a.p_adjusted : a.p_value) -
+      (b.p_adjusted != null ? b.p_adjusted : b.p_value));
+    const top = ranked.slice(0, state.net.topN);
+
+    for (const c of state.clusters) used.add(c.color);
+    for (const r of top) {
+      const c = state.clusters.find((x) => x.termId === r.id || x.name === r.name);
+      if (c) map.set(r.id, { color: c.color, shape: c.shape });
+    }
+    let i = 0;
+    for (const r of top) {
+      if (map.has(r.id)) continue;
+      let guard = 0, style = CLUSTER_STYLES[i % CLUSTER_STYLES.length];
+      while (used.has(style.color) && guard++ < CLUSTER_STYLES.length) {
+        i++;
+        style = CLUSTER_STYLES[i % CLUSTER_STYLES.length];
+      }
+      map.set(r.id, { color: style.color, shape: style.shape });
+      used.add(style.color);
+      i++;
+    }
+    state.net.colorMap = map;
+    return top;
+  }
+
   function buildNetwork() {
     const res = state.enrich.results;
     if (!res.length) { state.net.graph = null; renderNetwork(); return; }
     const wrap = $('#netWrap');
     const w = Math.max(320, wrap.clientWidth || 480);
     const h = Math.max(220, wrap.clientHeight || 320);
-    const g = VP.network.build(res, { maxNodes: 60, minJaccard: state.net.overlap });
+    assignEnrichColors();
+    const g = VP.network.build(res, {
+      maxNodes: state.net.topN,
+      minJaccard: state.net.overlap,
+      colors: state.net.colorMap,
+    });
     VP.network.layout(g, w, h, 320);
     state.net.graph = g;
     state.net.view = VP.network.fit(g, w, h);
@@ -1195,7 +1264,8 @@ window.VP = window.VP || {};
     $('#netEmpty').hidden = !!(g && g.nodes.length);
     const ctx = canvas.getContext('2d');
     VP.network.draw(ctx, g, state.net.view, {
-      dpr, background: '#131413', hover: state.net.hover, selected: state.enrich.annotated,
+      dpr, theme: 'light', background: '#ffffff',
+      hover: state.net.hover, selected: state.enrich.annotated,
     });
   }
 
@@ -1301,6 +1371,12 @@ window.VP = window.VP || {};
       $('#outNetOverlap').textContent = state.net.overlap.toFixed(2);
     });
     $('#rngNetOverlap').addEventListener('change', buildNetwork);
+    $('#selNetTop').addEventListener('change', () => {
+      state.net.topN = parseInt($('#selNetTop').value, 10) || 6;
+      assignEnrichColors();
+      renderEnrichTable();
+      buildNetwork();
+    });
 
     window.addEventListener('resize', debounce(relayoutNetworkIfResized, 220));
   }
@@ -1475,6 +1551,7 @@ window.VP = window.VP || {};
 
   function exportPng(scale) {
     if (!state.records.length) { toast('Load some data first.', 'error'); return; }
+    state.legendHover = false;
     const cfg = state.config;
     const c = document.createElement('canvas');
     c.width = Math.round(cfg.width * scale);
@@ -1500,6 +1577,7 @@ window.VP = window.VP || {};
 
   function exportSvg() {
     if (!state.records.length) { toast('Load some data first.', 'error'); return; }
+    state.legendHover = false;
     const cfg = state.config;
     const s = VP.surface.svg(cfg.width, cfg.height);
     VP.plot.draw(s, state);
@@ -2055,6 +2133,8 @@ window.VP = window.VP || {};
     $('#btnSaveSession').addEventListener('click', saveSession);
     $('#btnLoadSession').addEventListener('click', () => $('#sessionInput').click());
     $('#btnLoadPng').addEventListener('click', () => $('#pngInput').click());
+    $('#btnPresetPng').addEventListener('click', () => $('#pngInput').click());
+    $('#btnPresetJson').addEventListener('click', () => $('#sessionInput').click());
     $('#pngInput').addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
       if (f) restoreFromPng(f);
@@ -2095,8 +2175,14 @@ window.VP = window.VP || {};
 
   async function handleFile(file) {
     const name = file.name || 'file';
-    // A PNG dropped here is a figure to recover settings from, not a table.
+    // A PNG or settings file dropped here is a format to apply, not a table.
     if (/\.png$/i.test(name) || file.type === 'image/png') { restoreFromPng(file); return; }
+    if (/\.json$/i.test(name) || file.type === 'application/json') {
+      const rd = new FileReader();
+      rd.onload = () => restoreSession(String(rd.result));
+      rd.readAsText(file);
+      return;
+    }
     setStatus('Reading ' + name + '…');
     try {
       if (/\.xlsx?$|\.xlsm$/i.test(name)) {

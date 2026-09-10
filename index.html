@@ -58,7 +58,7 @@
       <h2 class="panel-title">Data<em>load a results table</em></h2>
 
       <div class="dropzone" id="dropzone">
-        <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.tab,.xlsx,.xlsm,.text,.png" hidden>
+        <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.tab,.xlsx,.xlsm,.text,.png,.json" hidden>
         <p class="dz-lead">Drop a results table here</p>
         <p class="dz-sub">.xlsx · .csv · .tsv · .txt</p>
         <button class="btn small" id="btnBrowse" type="button">Choose file</button>
@@ -71,6 +71,9 @@
       </details>
 
       <button class="btn ghost block" id="btnDemo" type="button">Load example dataset</button>
+      <button class="btn ghost block" id="btnPresetPng" type="button">Preset format from a PNG…</button>
+      <button class="btn ghost block" id="btnPresetJson" type="button">Upload JSON to preset settings…</button>
+      <p class="hint">Reuse the look of an earlier figure: pick a settings <code>.json</code>, or any PNG this site exported, and its cutoffs, styling, labels and clusters are applied to the data you load.</p>
 
       <div class="field" id="sheetField" hidden>
         <label for="selSheet">Worksheet</label>
@@ -526,6 +529,17 @@
         <div class="drawer-pane net-pane">
           <div class="net-tools">
             <span class="net-title">Pathway network</span>
+            <label class="net-ctl">top
+              <select id="selNetTop">
+                <option value="4">4</option>
+                <option value="6" selected>6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="40">40</option>
+              </select>
+            </label>
             <label class="net-ctl">overlap
               <input type="range" id="rngNetOverlap" min="5" max="80" step="5" value="25">
               <output id="outNetOverlap" class="mono">0.25</output>
@@ -538,7 +552,7 @@
             <div class="net-empty" id="netEmpty">Run an enrichment to see how the terms relate.</div>
             <div class="net-tip" id="netTip" hidden></div>
           </div>
-          <div class="net-foot" id="netFoot">Nodes are terms, sized by hit count and coloured by source. Edges join terms that share genes. Scroll to zoom · drag to pan · double-click a node to zoom in · click to annotate it on the plot.</div>
+          <div class="net-foot" id="netFoot">Nodes are the top terms, sized by hit count. Each colour matches that cluster on the volcano plot and in the table on the left. Edges join terms that share genes. Scroll to zoom · drag to pan · double-click a node to zoom in · click to annotate it on the plot.</div>
         </div>
        </div>
       </div>

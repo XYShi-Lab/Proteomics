@@ -128,10 +128,12 @@ colours, background, grid, axis style, figure dimensions, and three preset
 palettes including a colour-blind-safe one. Every colour control offers both a
 free gradient picker and a grid of 32 print-safe presets.
 
-The legend can sit in any corner of the plot, **outside the plot to the right**
-(the figure reserves margin for it), or **float** — dragged anywhere on the
-figure with the mouse. Automatic labels route around whichever position it
-occupies.
+The legend sits **to the right of the plot by default**, in reserved margin, so
+it never covers data. It can also go in any corner, or float freely — and you
+move it by simply **dragging it**: grab the box anywhere on the figure and it
+becomes floating, following the mouse. Hovering it shows a grip outline (screen
+only; it never appears in an export). Automatic labels route around whichever
+position it occupies.
 
 ### 6. GO clusters — organelles and pathways
 
@@ -173,8 +175,16 @@ clustered proteins, with three engines:
 | **Enrichr** | server | One library at a time |
 | **Built-in** | **your browser** | Hypergeometric test + Benjamini–Hochberg FDR over any loaded library. Needs no enrichment server. |
 
-Results land in a two-column view: a sortable, filterable table on the left,
-and a **pathway network** on the right.
+Results land in a two-column view on a **white background** — this is figure
+material, so it is presented the way it would be published: a sortable,
+filterable table on the left, and a **pathway network** on the right.
+
+Pick how many top terms to work with (default 6). Each gets its own colour, and
+that one colour is used everywhere: the swatch in the table, the node in the
+network, and the cluster on the volcano plot. A term already overlaid on the
+volcano keeps the colour it has there; anything new takes the next free slot in
+the cluster palette. Clicking a term to annotate it carries the same colour
+across.
 
 The network is an enrichment map. Enrichment output is a ranked list, but its
 terms are not independent — nested GO terms report the same proteins several
