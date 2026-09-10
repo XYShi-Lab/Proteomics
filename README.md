@@ -131,6 +131,17 @@ colours, background, grid, axis style, figure dimensions, and three preset
 palettes including a colour-blind-safe one. Every colour control offers both a
 free gradient picker and a grid of 32 print-safe presets.
 
+**Axes.** x and y ranges and tick intervals can each be set by hand or left to
+work themselves out — clearing one box returns just that edge to automatic. A
+tick interval too fine for the range is refused rather than drawing hundreds of
+lines, and the status bar says what it used instead.
+
+**Lock square grid** keeps one x tick interval exactly the same size on the page
+as one y tick interval, whatever the figure dimensions. The domains and tick
+steps stay as you set them, so the plot rectangle is what gives: it shrinks on
+one axis and the figure letterboxes around it. Verified square at frame shapes
+from 500×900 to 1400×400.
+
 The legend sits **to the right of the plot by default**, in reserved margin, so
 it never covers data. It can also go in any corner, or float freely — and you
 move it by simply **dragging it**: grab the box anywhere on the figure and it

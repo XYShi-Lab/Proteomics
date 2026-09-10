@@ -1767,7 +1767,8 @@ window.VP = window.VP || {};
           total: (c.genes || []).length, matched: 0,
         }));
       }
-      // Older settings files predate the cluster legend.
+      // Older format files predate these blocks.
+      if (!state.config.axis) state.config.axis = VP.plot.defaultConfig().axis;
       if (!state.config.clusterLegend) state.config.clusterLegend = VP.plot.defaultConfig().clusterLegend;
       if (!state.config.clusterLegend.counts) state.config.clusterLegend.counts = { up: true, down: false, total: true };
       syncControlsFromState();
@@ -1856,6 +1857,15 @@ window.VP = window.VP || {};
     $('#selLabelText').value = state.labelTextMode;
     $('#selOrganism').value = state.organism;
     $('#selCentre').value = state.centre;
+    const ax = state.config.axis;
+    $('#inpXMin').value = ax.xMin == null ? '' : ax.xMin;
+    $('#inpXMax').value = ax.xMax == null ? '' : ax.xMax;
+    $('#inpYMin').value = ax.yMin == null ? '' : ax.yMin;
+    $('#inpYMax').value = ax.yMax == null ? '' : ax.yMax;
+    $('#inpXStep').value = ax.xTickStep || 0;
+    $('#inpYStep').value = ax.yTickStep || 0;
+    $('#btnSquareGrid').classList.toggle('is-on', !!ax.squareGrid);
+    $('#btnSquareGrid').textContent = ax.squareGrid ? 'Square grid: on' : 'Lock square grid';
     const cl = state.config.clusterLegend;
     $('#selClPos').value = cl.show ? cl.position : 'none';
     $('#selClFont').value = cl.family || '';
@@ -2091,6 +2101,56 @@ window.VP = window.VP || {};
     $('#btnPalDefault').addEventListener('click', () => applyPalette('default'));
     $('#btnPalColorblind').addEventListener('click', () => applyPalette('colorblind'));
     $('#btnPalMono').addEventListener('click', () => applyPalette('mono'));
+
+    /* Axes & grid. A manual range is the new base domain, so any zoom in force
+       is dropped - otherwise typing a range appears to do nothing. */
+    const axisNum = (id, key) => {
+      $('#' + id).addEventListener('input', () => {
+        const raw = $('#' + id).value.trim();
+        const v = raw === '' ? null : parseFloat(raw);
+        state.config.axis[key] = (v == null || !isFinite(v)) ? null : v;
+        state.view = null;
+        render();
+      });
+    };
+    axisNum('inpXMin', 'xMin'); axisNum('inpXMax', 'xMax');
+    axisNum('inpYMin', 'yMin'); axisNum('inpYMax', 'yMax');
+
+    const stepNum = (id, key) => {
+      $('#' + id).addEventListener('input', () => {
+        const v = parseFloat($('#' + id).value);
+        state.config.axis[key] = isFinite(v) && v > 0 ? v : 0;
+        render();
+        // Too fine a step would draw hundreds of lines, so it is refused.
+        const geom = VP.plot.computeGeometry(state);
+        const t = key === 'xTickStep' ? geom.xT : geom.yT;
+        const asked = state.config.axis[key];
+        if (asked > 0 && Math.abs(t.step - asked) > asked * 1e-6) {
+          setStatus('Tick interval ' + asked + ' is too fine for this range — using ' + fmtNum(t.step, 3));
+        }
+      });
+    };
+    stepNum('inpXStep', 'xTickStep'); stepNum('inpYStep', 'yTickStep');
+
+    $('#btnSquareGrid').addEventListener('click', () => {
+      const on = !state.config.axis.squareGrid;
+      state.config.axis.squareGrid = on;
+      $('#btnSquareGrid').classList.toggle('is-on', on);
+      $('#btnSquareGrid').textContent = on ? 'Square grid: on' : 'Lock square grid';
+      render();
+      setStatus(on
+        ? 'Square grid locked — one x interval equals one y interval on the page'
+        : 'Square grid unlocked — the plot fills the frame');
+    });
+
+    $('#btnAxesAuto').addEventListener('click', () => {
+      Object.assign(state.config.axis, {
+        xMin: null, xMax: null, yMin: null, yMax: null, xTickStep: 0, yTickStep: 0,
+      });
+      state.view = null;
+      syncControlsFromState();
+      render();
+    });
 
     const textBind = (id, key) => {
       $('#' + id).addEventListener('input', () => { state.config[key] = $('#' + id).value; render(); });

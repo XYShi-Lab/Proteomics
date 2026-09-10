@@ -59,6 +59,13 @@ window.VP = window.VP || {};
         threshold: '#8a8a82',
       },
 
+      /* Manual axis control. null / 0 mean "work it out from the data". */
+      axis: {
+        xMin: null, xMax: null, yMin: null, yMax: null,
+        xTickStep: 0, yTickStep: 0,
+        squareGrid: false,
+      },
+
       showGrid: true,
       showThresholds: true,
       thresholdDash: [5, 4],
@@ -120,7 +127,30 @@ window.VP = window.VP || {};
     }
     const padX = (x1 - x0) * 0.06 || 1;
     const padY = ext.y1 * 0.07 || 0.5;
-    return { x0: x0 - padX, x1: x1 + padX, y0: 0, y1: ext.y1 + padY };
+    const dom = { x0: x0 - padX, x1: x1 + padX, y0: 0, y1: ext.y1 + padY };
+
+    // Anything the user typed in wins over the computed extent.
+    const ax = cfg.axis || {};
+    if (ax.xMin != null && isFinite(ax.xMin)) dom.x0 = ax.xMin;
+    if (ax.xMax != null && isFinite(ax.xMax)) dom.x1 = ax.xMax;
+    if (ax.yMin != null && isFinite(ax.yMin)) dom.y0 = ax.yMin;
+    if (ax.yMax != null && isFinite(ax.yMax)) dom.y1 = ax.yMax;
+    if (dom.x1 <= dom.x0) dom.x1 = dom.x0 + 1;
+    if (dom.y1 <= dom.y0) dom.y1 = dom.y0 + 1;
+    return dom;
+  }
+
+  /* Ticks at an interval the user chose, rather than a "nice" one. */
+  function fixedTicks(min, max, step) {
+    const ticks = [];
+    if (!(step > 0)) return null;
+    // Refuse a step so fine it would draw thousands of lines.
+    if ((max - min) / step > 250) return null;
+    const start = Math.ceil(min / step - 1e-9) * step;
+    for (let v = start; v <= max + step * 1e-6; v += step) {
+      ticks.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+    }
+    return { ticks, step };
   }
 
   function computeGeometry(state) {
@@ -128,8 +158,9 @@ window.VP = window.VP || {};
     const dom = state.view || autoDomain(state);
 
     const tickFont = { family: cfg.font.family, size: cfg.font.tickSize };
-    const yT = niceTicks(dom.y0, dom.y1, 6);
-    const xT = niceTicks(dom.x0, dom.x1, 7);
+    const ax = cfg.axis || {};
+    const yT = fixedTicks(dom.y0, dom.y1, ax.yTickStep) || niceTicks(dom.y0, dom.y1, 6);
+    const xT = fixedTicks(dom.x0, dom.x1, ax.xTickStep) || niceTicks(dom.x0, dom.x1, 7);
 
     // The left margin has to fit the widest y tick label plus the rotated axis
     // title, so the figure never clips its own axis.
@@ -159,17 +190,35 @@ window.VP = window.VP || {};
       else if (pos === 'bottom') marginBottomExtra = Math.ceil(cls.boxH + 10);
     }
 
-    const plotX = marginLeft + marginLeftExtra;
-    const plotY = marginTop;
-    const plotW = Math.max(40, cfg.width - plotX - marginRight);
-    const plotH = Math.max(40, cfg.height - marginTop - marginBottom - marginBottomExtra);
+    let plotX = marginLeft + marginLeftExtra;
+    let plotY = marginTop;
+    let plotW = Math.max(40, cfg.width - plotX - marginRight);
+    let plotH = Math.max(40, cfg.height - marginTop - marginBottom - marginBottomExtra);
+
+    /* Square grid: make one x tick interval measure the same on the page as one
+       y tick interval, whatever the frame is. The domains and tick steps are
+       what the user asked for, so the only free variable is the plot rectangle -
+       it shrinks on one axis and the figure letterboxes around it. */
+    if (ax.squareGrid) {
+      const ratio = (yT.step * (dom.x1 - dom.x0)) / (xT.step * (dom.y1 - dom.y0));
+      if (isFinite(ratio) && ratio > 0) {
+        const availW = plotW, availH = plotH;
+        if (availW / availH > ratio) plotW = Math.max(40, availH * ratio);
+        else plotH = Math.max(40, availW / ratio);
+        plotX += (availW - plotW) / 2;
+        plotY += (availH - plotH) / 2;
+      }
+    }
 
     const sx = (v) => plotX + ((v - dom.x0) / (dom.x1 - dom.x0)) * plotW;
     const sy = (v) => plotY + plotH - ((v - dom.y0) / (dom.y1 - dom.y0)) * plotH;
     const ix = (px) => dom.x0 + ((px - plotX) / plotW) * (dom.x1 - dom.x0);
     const iy = (py) => dom.y0 + ((plotY + plotH - py) / plotH) * (dom.y1 - dom.y0);
 
-    return { dom, plotX, plotY, plotW, plotH, sx, sy, ix, iy, xT, yT, reserve, marginLeftExtra };
+    return {
+      dom, plotX, plotY, plotW, plotH, sx, sy, ix, iy, xT, yT, reserve,
+      marginLeftExtra, tickLabelW: maxYLabel,
+    };
   }
 
   /* --- point styling ------------------------------------------------------ */
@@ -489,13 +538,15 @@ window.VP = window.VP || {};
     }
 
     if (cfg.xLabel) {
-      surface.text(plotX + plotW / 2, cfg.height - 4, cfg.xLabel, {
-        family: cfg.font.family, size: cfg.font.axisTitleSize, fill: cfg.colors.text,
-        anchor: 'middle', baseline: 'bottom',
-      });
+      surface.text(plotX + plotW / 2,
+        plotY + plotH + 12 + cfg.font.tickSize + cfg.font.axisTitleSize, cfg.xLabel, {
+          family: cfg.font.family, size: cfg.font.axisTitleSize, fill: cfg.colors.text,
+          anchor: 'middle', baseline: 'bottom',
+        });
     }
     if (cfg.yLabel) {
-      surface.text((geom.marginLeftExtra || 0) + 12, plotY + plotH / 2, cfg.yLabel, {
+      surface.text(plotX - (geom.tickLabelW || 0) - cfg.font.axisTitleSize - 12,
+        plotY + plotH / 2, cfg.yLabel, {
         family: cfg.font.family, size: cfg.font.axisTitleSize, fill: cfg.colors.text,
         anchor: 'middle', baseline: 'top', rotate: -90,
       });
@@ -844,6 +895,6 @@ window.VP = window.VP || {};
   VP.plot = {
     defaultConfig, computeGeometry, autoDomain, draw, layoutLabels,
     buildIndex, hitTest, pointsInRect, styleFor, PUB_FONTS, legendEntries, legendLayout, legendSize,
-    clusterLegendLayout, clusterLegendSize, visibleClusters,
+    clusterLegendLayout, clusterLegendSize, visibleClusters, fixedTicks,
   };
 })(window.VP);
