@@ -5,6 +5,10 @@ table, set your cutoffs, hover a dot to find out what the protein is and where
 it lives, label the proteins you care about, overlay organelles and pathways,
 run enrichment, and export a publication-ready figure.
 
+The figure is always scaled to fill the stage, so changing the frame size,
+opening the results drawer or switching panels never leaves the plot stranded in
+a corner — the canvas backing store is scaled with it, so it stays crisp.
+
 Everything runs client-side. **Your data is never uploaded.** Only gene and
 protein *names* leave the browser, and only when you ask for annotation or
 enrichment.
@@ -105,7 +109,9 @@ unnoticed. You can also:
 
 - **Click** any point to pin or unpin its label.
 - **Drag** a label to place it; double-click to snap it back.
-- **Box-label** a whole region (shift-drag, or the *Box label* tool).
+- **Box-label** a whole region (shift-drag, or the *Box label* tool). In that
+  mode a single click labels the point under the cursor; a double-click on any
+  labelled point removes its label.
 - **Auto-label** the top *N* proteins by significance.
 - **Remove all labels** in one click, with **undo/redo** (buttons, or
   Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z) across every labelling action — pinning,
@@ -116,8 +122,10 @@ from their point.
 
 ### 4. Adjustable cutoffs
 
-p-value and |log₂ FC| cutoffs are live: sliders, exact numeric entry, and
-one-click presets (1.5×, 2×, 4×). Up/down/n.s. counts update as you move them,
+p-value and fold-change cutoffs are live: sliders, exact numeric entry, and
+one-click presets (1.5×, 2×, 4×). The fold-change cutoff is entered as a **fold
+change** — 2 means two-fold — because that is how it gets reported; the log₂
+equivalent is shown underneath. Up/down/n.s. counts update as you move them,
 and you can switch between the raw and adjusted p-value at any time — the
 y-axis label follows. If adjusted p leaves you with almost nothing (common with
 few replicates), the app says so instead of showing an empty plot.
@@ -126,13 +134,17 @@ few replicates), the app says so instead of showing an empty plot.
 
 Font family (publication faces: Arial, Helvetica, Arial Narrow, Calibri, Times,
 Georgia…), independent sizes for tick labels, axis titles, point labels and the
-plot title, bold/italic labels, point size, opacity, outline width, per-class
+plot title, bold/italic labels (point labels can take a font of their own, set in the Label
+panel), point size, opacity, outline width, per-class
 colours, background, grid, axis style, figure dimensions, and three preset
 palettes including a colour-blind-safe one. Every colour control offers both a
 free gradient picker and a grid of 32 print-safe presets.
 
 **Axes.** x and y ranges and tick intervals can each be set by hand or left to
-work themselves out — clearing one box returns just that edge to automatic. A
+work themselves out — clearing one box returns just that edge to automatic. y
+min starts at −0.1 so proteins sitting on p = 1 are not clipped by the axis
+line. **Auto** clears everything back to defaults and **Undo auto** puts your
+manual settings back. A
 tick interval too fine for the range is refused rather than drawing hundreds of
 lines, and the status bar says what it used instead.
 

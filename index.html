@@ -150,18 +150,18 @@
       </div>
 
       <div class="field slider-field">
-        <label for="inpFc">|log<sub>2</sub> FC| cutoff <output id="outFc" class="mono">1.00</output></label>
+        <label for="inpFc">Fold-change cutoff <output id="outFc" class="mono">2.00×</output></label>
         <input type="range" id="rngFc" min="0" max="600" step="1" value="100">
         <div class="row tight">
-          <input type="number" id="inpFc" class="mono" min="0" step="0.1" value="1">
+          <input type="number" id="inpFc" class="mono" min="1" step="0.1" value="2">
           <div class="chipset" id="fcPresets">
-            <button class="chip" data-fc="0" type="button">none</button>
-            <button class="chip" data-fc="0.585" type="button">1.5×</button>
-            <button class="chip" data-fc="1" type="button">2×</button>
-            <button class="chip" data-fc="2" type="button">4×</button>
+            <button class="chip" data-fc="1" type="button">none</button>
+            <button class="chip" data-fc="1.5" type="button">1.5×</button>
+            <button class="chip" data-fc="2" type="button">2×</button>
+            <button class="chip" data-fc="4" type="button">4×</button>
           </div>
         </div>
-        <p class="hint" id="fcHint">|log2 FC| ≥ 1 is a two-fold change.</p>
+        <p class="hint" id="fcHint">A protein must change at least 2-fold in either direction.</p>
       </div>
 
       <div class="tally" id="tally">
@@ -233,6 +233,7 @@
       <div class="row">
         <button class="btn small ghost" id="btnSquareGrid" type="button">Lock square grid</button>
         <button class="btn small ghost" id="btnAxesAuto" type="button">Auto</button>
+        <button class="btn small ghost" id="btnAxesUndo" type="button" disabled>Undo auto</button>
       </div>
       <p class="hint" id="squareHint">Leave a box empty or at 0 for automatic. <b>Lock square grid</b> keeps one x interval the same size on the page as one y interval, whatever the figure dimensions — the plot letterboxes inside the frame to hold the ratio.</p>
 
@@ -294,6 +295,15 @@
         <label for="rngAutoLabel">Label top <output id="outAutoLabel" class="mono">0</output> by significance</label>
         <input type="range" id="rngAutoLabel" min="0" max="60" step="1" value="0">
       </div>
+      <div class="field">
+        <label for="selLabelFont">Label font</label>
+        <select id="selLabelFont"></select>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="inpLabelSize2">Label size</label><input type="number" id="inpLabelSize2" class="mono" min="4" max="40" step="0.5" value="11"></div>
+        <div class="field"><label for="colLabelText">Label colour</label><input type="color" id="colLabelText" value="#111111" title="Fixed label colour"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="chkLabelMatch" checked> colour labels to match their points</label>
       <div class="field">
         <label for="selLabelText">Label shows</label>
         <select id="selLabelText">

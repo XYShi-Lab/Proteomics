@@ -122,6 +122,7 @@ window.VP = window.VP || {};
     mode: 'pan',
     enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set() },
     net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25, topN: 6, colorMap: new Map() },
+    axisUndo: null,
     legendHover: false,
     clusterLegendHover: false,
     sourceName: '',
@@ -163,16 +164,36 @@ window.VP = window.VP || {};
     requestAnimationFrame(() => { rafPending = false; renderNow(); });
   }
 
+  /* Scale the figure so it always fills the stage. The exported figure keeps
+     its own dimensions - this is display only - and the canvas backing store is
+     scaled with it, so enlarging never softens the image. */
+  function displayScale() {
+    const wrap = $('#canvasWrap');
+    const cfg = state.config;
+    if (!wrap || !wrap.clientWidth || !wrap.clientHeight) return 1;
+    const pad = 34;
+    const availW = Math.max(120, wrap.clientWidth - pad);
+    const availH = Math.max(120, wrap.clientHeight - pad);
+    return clamp(Math.min(availW / cfg.width, availH / cfg.height), 0.15, 4);
+  }
+
   function renderNow() {
     const cfg = state.config;
     const canvas = $('#plot');
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-    if (canvas.width !== Math.round(cfg.width * dpr) || canvas.height !== Math.round(cfg.height * dpr)) {
-      canvas.width = Math.round(cfg.width * dpr);
-      canvas.height = Math.round(cfg.height * dpr);
+    const fit = displayScale();
+    state.displayScale = fit;
+
+    const cssW = Math.round(cfg.width * fit);
+    const cssH = Math.round(cfg.height * fit);
+    const backW = Math.round(cfg.width * fit * dpr);
+    const backH = Math.round(cfg.height * fit * dpr);
+    if (canvas.width !== backW || canvas.height !== backH) {
+      canvas.width = backW;
+      canvas.height = backH;
     }
-    canvas.style.width = cfg.width + 'px';
-    canvas.style.height = cfg.height + 'px';
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
 
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -180,7 +201,7 @@ window.VP = window.VP || {};
 
     if (!state.records.length) { state.geom = null; state.index = null; return; }
 
-    const surface = VP.surface.canvas(ctx, dpr);
+    const surface = VP.surface.canvas(ctx, dpr * fit);
     state.geom = VP.plot.draw(surface, state);
     state.index = VP.plot.buildIndex(state, state.geom);
   }
@@ -1002,6 +1023,16 @@ window.VP = window.VP || {};
 
     if (d.kind === 'box') {
       $('#selectionBox').hidden = true;
+      // A click that did not sweep out a box labels the point under it.
+      if (!d.moved || (Math.abs(d.curX - d.startX) <= 4 && Math.abs(d.curY - d.startY) <= 4)) {
+        const hit = VP.plot.hitTest(state.index, d.startX, d.startY);
+        if (hit && !state.pinned.has(hit.rec.i)) {
+          pushLabelHistory();
+          state.pinned.add(hit.rec.i);
+          recompute();
+        }
+        return;
+      }
       if (d.moved && Math.abs(d.curX - d.startX) > 4 && Math.abs(d.curY - d.startY) > 4) {
         const inside = VP.plot.pointsInRect(state.index, d.startX, d.startY, d.curX, d.curY);
         pushLabelHistory();
@@ -1067,6 +1098,17 @@ window.VP = window.VP || {};
     const p = canvasPos(ev);
     const L = labelAt(p.x, p.y);
     if (L) { delete state.labelOffsets[L.rec.i]; render(); return; }
+    // Double-clicking a labelled point removes its label; empty space refits.
+    const hit = VP.plot.hitTest(state.index, p.x, p.y);
+    if (hit && (state.pinned.has(hit.rec.i) || state.listMatched.has(hit.rec.i))) {
+      pushLabelHistory();
+      state.pinned.delete(hit.rec.i);
+      state.listMatched.delete(hit.rec.i);
+      delete state.labelOffsets[hit.rec.i];
+      recompute();
+      return;
+    }
+    if (hit) return;
     resetView();
   });
 
@@ -1812,8 +1854,9 @@ window.VP = window.VP || {};
     $('#inpP').value = th.pCutoff;
     $('#outP').textContent = String(th.pCutoff);
     $('#rngP').value = String(pToSlider(th.pCutoff));
-    $('#inpFc').value = th.fcCutoff;
-    $('#outFc').textContent = th.fcCutoff.toFixed(2);
+    const ratio = Math.pow(2, th.fcCutoff);
+    $('#inpFc').value = parseFloat(ratio.toFixed(3));
+    $('#outFc').textContent = ratio.toFixed(2) + '\u00d7';
     $('#rngFc').value = String(Math.round(th.fcCutoff * 100));
     $('#selPType').value = th.useAdjusted ? 'padj' : 'p';
 
@@ -1821,6 +1864,10 @@ window.VP = window.VP || {};
     $('#inpTickSize').value = cfg.font.tickSize;
     $('#inpAxisSize').value = cfg.font.axisTitleSize;
     $('#inpLabelSize').value = cfg.font.labelSize;
+    $('#inpLabelSize2').value = cfg.font.labelSize;
+    $('#selLabelFont').value = cfg.font.labelFamily || '';
+    $('#chkLabelMatch').checked = cfg.label.color === 'match';
+    if (cfg.label.color !== 'match') $('#colLabelText').value = cfg.label.color;
     $('#inpTitleSize').value = cfg.font.titleSize;
     $('#chkLabelBold').checked = cfg.font.labelWeight === 'bold';
     $('#chkLabelItalic').checked = !!cfg.font.labelItalic;
@@ -1866,6 +1913,7 @@ window.VP = window.VP || {};
     $('#inpYStep').value = ax.yTickStep || 0;
     $('#btnSquareGrid').classList.toggle('is-on', !!ax.squareGrid);
     $('#btnSquareGrid').textContent = ax.squareGrid ? 'Square grid: on' : 'Lock square grid';
+    if ($('#btnAxesUndo')) $('#btnAxesUndo').disabled = !state.axisUndo;
     const cl = state.config.clusterLegend;
     $('#selClPos').value = cl.show ? cl.position : 'none';
     $('#selClFont').value = cl.family || '';
@@ -2016,21 +2064,27 @@ window.VP = window.VP || {};
       c.addEventListener('click', () => setP(parseFloat(c.dataset.p)));
     });
 
-    const setFc = (v, fromSlider) => {
-      v = Math.max(0, v || 0);
-      state.thresholds.fcCutoff = v;
-      $('#outFc').textContent = v.toFixed(2);
-      $('#inpFc').value = v;
-      if (!fromSlider) $('#rngFc').value = String(Math.round(v * 100));
-      $('#fcHint').textContent = v === 0
+    /* The control is a fold change, because that is what people report; the
+       state stays in log2 because that is what the plot is drawn in. */
+    const setFcRatio = (ratio, fromSlider) => {
+      const r = Math.max(1, isFinite(ratio) ? ratio : 1);
+      const l2 = Math.log2(r);
+      state.thresholds.fcCutoff = l2;
+      $('#outFc').textContent = r.toFixed(2) + '\u00d7';
+      $('#inpFc').value = parseFloat(r.toFixed(3));
+      if (!fromSlider) $('#rngFc').value = String(Math.round(l2 * 100));
+      $('#fcHint').innerHTML = r <= 1.0001
         ? 'No fold-change requirement — significance is decided by the p-value alone.'
-        : '|log₂ FC| ≥ ' + v.toFixed(2) + ' is a ' + fmtNum(Math.pow(2, v), 2) + '-fold change.';
+        : 'A protein must change at least <b>' + fmtNum(r, 2) + '-fold</b> in either direction ' +
+          '(|log₂ FC| ≥ ' + fmtNum(l2, 2) + ').';
       recompute();
     };
-    $('#rngFc').addEventListener('input', () => setFc(parseFloat($('#rngFc').value) / 100, true));
-    $('#inpFc').addEventListener('change', () => setFc(parseFloat($('#inpFc').value)));
+    state.setFcRatio = setFcRatio;
+    $('#rngFc').addEventListener('input', () =>
+      setFcRatio(Math.pow(2, parseFloat($('#rngFc').value) / 100), true));
+    $('#inpFc').addEventListener('change', () => setFcRatio(parseFloat($('#inpFc').value)));
     document.querySelectorAll('#fcPresets .chip').forEach((c) => {
-      c.addEventListener('click', () => setFc(parseFloat(c.dataset.fc)));
+      c.addEventListener('click', () => setFcRatio(parseFloat(c.dataset.fc)));
     });
 
     $('#selPType').addEventListener('change', () => {
@@ -2057,7 +2111,10 @@ window.VP = window.VP || {};
     };
     numBind('inpTickSize', (v) => { state.config.font.tickSize = v; });
     numBind('inpAxisSize', (v) => { state.config.font.axisTitleSize = v; });
-    numBind('inpLabelSize', (v) => { state.config.font.labelSize = v; });
+    numBind('inpLabelSize', (v) => {
+      state.config.font.labelSize = v;
+      $('#inpLabelSize2').value = v;
+    });
     numBind('inpTitleSize', (v) => { state.config.font.titleSize = v; });
     numBind('inpWidth', (v) => { state.config.width = clamp(v, 200, 4000); updatePngHint(); });
     numBind('inpHeight', (v) => { state.config.height = clamp(v, 200, 4000); updatePngHint(); });
@@ -2144,12 +2201,29 @@ window.VP = window.VP || {};
     });
 
     $('#btnAxesAuto').addEventListener('click', () => {
+      // Remember what Auto threw away, so it can be put back.
+      state.axisUndo = JSON.parse(JSON.stringify(state.config.axis));
+      const d = VP.plot.defaultConfig().axis;
       Object.assign(state.config.axis, {
-        xMin: null, xMax: null, yMin: null, yMax: null, xTickStep: 0, yTickStep: 0,
+        xMin: d.xMin, xMax: d.xMax, yMin: d.yMin, yMax: d.yMax,
+        xTickStep: d.xTickStep, yTickStep: d.yTickStep,
       });
       state.view = null;
       syncControlsFromState();
       render();
+      $('#btnAxesUndo').disabled = false;
+    });
+
+    $('#btnAxesUndo').addEventListener('click', () => {
+      if (!state.axisUndo) return;
+      const restore = state.axisUndo;
+      state.axisUndo = null;
+      Object.assign(state.config.axis, restore);
+      state.view = null;
+      syncControlsFromState();
+      render();
+      $('#btnAxesUndo').disabled = true;
+      setStatus('Axis settings restored');
     });
 
     const textBind = (id, key) => {
@@ -2195,6 +2269,33 @@ window.VP = window.VP || {};
     });
     $('#rngAutoLabel').addEventListener('change', () => {
       if (autoLabelDragSnap) { pushLabelHistory(autoLabelDragSnap); autoLabelDragSnap = null; }
+    });
+    const labelFont = $('#selLabelFont');
+    labelFont.appendChild(el('option', { value: '', text: 'Same as figure' }));
+    VP.plot.PUB_FONTS.forEach((f) => {
+      labelFont.appendChild(el('option', { value: f, text: f.split(',')[0].replace(/"/g, '') }));
+    });
+    labelFont.addEventListener('change', () => {
+      state.config.font.labelFamily = labelFont.value;
+      render();
+    });
+    // Two ways in to the same setting: this and the Style panel.
+    $('#inpLabelSize2').addEventListener('input', () => {
+      const v = parseFloat($('#inpLabelSize2').value);
+      if (isFinite(v)) {
+        state.config.font.labelSize = clamp(v, 4, 40);
+        $('#inpLabelSize').value = state.config.font.labelSize;
+        render();
+      }
+    });
+    $('#colLabelText').addEventListener('input', () => {
+      state.config.label.color = $('#colLabelText').value;
+      $('#chkLabelMatch').checked = false;
+      render();
+    });
+    $('#chkLabelMatch').addEventListener('change', (e) => {
+      state.config.label.color = e.target.checked ? 'match' : $('#colLabelText').value;
+      render();
     });
     $('#selLabelText').addEventListener('change', (e) => { state.labelTextMode = e.target.value; recompute(); });
     $('#btnResetLabelPos').addEventListener('click', () => {
@@ -2409,7 +2510,9 @@ window.VP = window.VP || {};
     state.mode = m;
     $('#btnModePan').classList.toggle('is-on', m === 'pan');
     $('#btnModeSelect').classList.toggle('is-on', m === 'select');
-    setStatus(m === 'select' ? 'Drag a box to label every protein inside it' : 'Drag to pan · scroll to zoom · click a point to pin its label');
+    setStatus(m === 'select'
+      ? 'Drag a box to label everything inside · click a point to label it · double-click to unlabel'
+      : 'Drag to pan · scroll to zoom · click a point to pin its label · double-click to unlabel');
   }
 
   /* ======================= file handling ======================= */
@@ -2472,6 +2575,10 @@ window.VP = window.VP || {};
     setMode('pan');
     renderEnrichTable();
     window.addEventListener('resize', debounce(render, 120));
+    if (typeof ResizeObserver === 'function') {
+      // Opening the drawer or switching panels changes the stage; refit at once.
+      new ResizeObserver(debounce(render, 60)).observe($('#canvasWrap'));
+    }
     // Web fonts change text metrics, so re-layout once they are ready.
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render());
   }

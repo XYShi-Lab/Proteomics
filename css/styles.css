@@ -849,8 +849,8 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: auto;
-  padding: 26px;
+  overflow: hidden;
+  padding: 16px;
   min-height: 0;
 }
 

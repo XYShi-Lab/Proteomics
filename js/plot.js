@@ -37,6 +37,7 @@ window.VP = window.VP || {};
 
       font: {
         family: 'Arial, Helvetica, sans-serif',
+        labelFamily: '',            // blank = follow the figure font
         tickSize: 12,
         axisTitleSize: 14,
         titleSize: 17,
@@ -61,7 +62,7 @@ window.VP = window.VP || {};
 
       /* Manual axis control. null / 0 mean "work it out from the data". */
       axis: {
-        xMin: null, xMax: null, yMin: null, yMax: null,
+        xMin: null, xMax: null, yMin: -0.1, yMax: null,
         xTickStep: 0, yTickStep: 0,
         squareGrid: false,
       },
@@ -289,7 +290,7 @@ window.VP = window.VP || {};
   function layoutLabels(state, geom) {
     const cfg = state.config;
     const font = {
-      family: cfg.font.family,
+      family: cfg.font.labelFamily || cfg.font.family,
       size: cfg.font.labelSize,
       weight: cfg.font.labelWeight,
       italic: cfg.font.labelItalic,
