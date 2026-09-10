@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Volcano Studio — interactive volcano plots for proteomics</title>
+<meta name="description" content="Interactive volcano plots for proteomic data: hover for protein annotation, label protein lists, overlay GO/organelle clusters, run pathway enrichment, export publication-ready PNG and SVG.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- ============================ MASTHEAD ============================ -->
+<header class="masthead">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-text">
+      <b>Volcano</b><i>Studio</i>
+      <small>proteomics differential expression</small>
+    </span>
+  </div>
+
+  <div class="readout" id="readout">
+    <div class="readout-item"><span class="rd-label">proteins</span><span class="rd-value" id="rdTotal">—</span></div>
+    <div class="readout-item up"><span class="rd-label">up</span><span class="rd-value" id="rdUp">—</span></div>
+    <div class="readout-item down"><span class="rd-label">down</span><span class="rd-value" id="rdDown">—</span></div>
+    <div class="readout-item"><span class="rd-label">labelled</span><span class="rd-value" id="rdLabelled">0</span></div>
+  </div>
+
+  <div class="masthead-actions">
+    <button class="btn ghost" id="btnHelp" type="button">Guide</button>
+    <button class="btn" id="btnQuickPng" type="button">Download PNG</button>
+  </div>
+</header>
+
+<!-- ============================ WORKBENCH ============================ -->
+<div class="workbench">
+
+  <!-- tab rail -->
+  <nav class="rail" id="rail" aria-label="Tool sections">
+    <button class="rail-btn is-active" data-panel="data"    type="button"><span class="rail-ico">01</span><span class="rail-name">Data</span></button>
+    <button class="rail-btn" data-panel="thresholds"        type="button"><span class="rail-ico">02</span><span class="rail-name">Cutoffs</span></button>
+    <button class="rail-btn" data-panel="style"             type="button"><span class="rail-ico">03</span><span class="rail-name">Style</span></button>
+    <button class="rail-btn" data-panel="proteins"          type="button"><span class="rail-ico">04</span><span class="rail-name">Label</span></button>
+    <button class="rail-btn" data-panel="clusters"          type="button"><span class="rail-ico">05</span><span class="rail-name">GO</span></button>
+    <button class="rail-btn" data-panel="pathways"          type="button"><span class="rail-ico">06</span><span class="rail-name">Pathways</span></button>
+    <button class="rail-btn" data-panel="export"            type="button"><span class="rail-ico">07</span><span class="rail-name">Export</span></button>
+  </nav>
+
+  <!-- control column -->
+  <aside class="controls" id="controls">
+
+    <!-- ---------------- 01 DATA ---------------- -->
+    <section class="panel is-active" data-panel="data">
+      <h2 class="panel-title">Data<em>load a results table</em></h2>
+
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.tab,.xlsx,.xlsm,.text" hidden>
+        <p class="dz-lead">Drop a results table here</p>
+        <p class="dz-sub">.xlsx · .csv · .tsv · .txt</p>
+        <button class="btn small" id="btnBrowse" type="button">Choose file</button>
+      </div>
+
+      <details class="fold">
+        <summary>Paste a table instead</summary>
+        <textarea id="pasteArea" class="mono" rows="6" placeholder="Paste tab- or comma-separated text, including the header row"></textarea>
+        <button class="btn small block" id="btnPaste" type="button">Load pasted table</button>
+      </details>
+
+      <button class="btn ghost block" id="btnDemo" type="button">Load example dataset</button>
+
+      <div class="field" id="sheetField" hidden>
+        <label for="selSheet">Worksheet</label>
+        <select id="selSheet"></select>
+      </div>
+
+      <div class="field" id="comparisonField" hidden>
+        <label for="selComparison">Comparison</label>
+        <select id="selComparison"></select>
+        <p class="hint">Several contrasts were found in this file.</p>
+      </div>
+
+      <div id="mappingBlock" hidden>
+        <h3 class="sub">Column mapping</h3>
+        <p class="hint" id="mapGuess"></p>
+        <div class="grid2">
+          <div class="field"><label for="colId">Protein ID</label><select id="colId"></select></div>
+          <div class="field"><label for="colGene">Gene name</label><select id="colGene"></select></div>
+          <div class="field"><label for="colFc">Fold change</label><select id="colFc"></select></div>
+          <div class="field"><label for="colFcScale">…is given as</label>
+            <select id="colFcScale">
+              <option value="log2">log2 fold change</option>
+              <option value="linear">linear ratio (0.02–50)</option>
+              <option value="signed">signed fold change (±1…±100)</option>
+            </select>
+          </div>
+          <div class="field"><label for="colP">p-value</label><select id="colP"></select></div>
+          <div class="field"><label for="colPadj">Adjusted p / FDR</label><select id="colPadj"></select></div>
+          <div class="field"><label for="colDesc">Description</label><select id="colDesc"></select></div>
+          <div class="field"><label for="colName">Entry name</label><select id="colName"></select></div>
+        </div>
+        <label class="check"><input type="checkbox" id="chkNegLog"> p column is already −log10</label>
+        <button class="btn small block" id="btnApplyMapping" type="button">Apply mapping</button>
+      </div>
+
+      <div class="notice" id="dataNotice" hidden></div>
+    </section>
+
+    <!-- ---------------- 02 CUTOFFS ---------------- -->
+    <section class="panel" data-panel="thresholds">
+      <h2 class="panel-title">Cutoffs<em>significance thresholds</em></h2>
+
+      <div class="field">
+        <label for="selPType">Test statistic</label>
+        <select id="selPType">
+          <option value="padj">Adjusted p-value / FDR</option>
+          <option value="p">Raw p-value</option>
+        </select>
+        <p class="hint" id="pTypeHint"></p>
+      </div>
+
+      <div class="field slider-field">
+        <label for="inpP">p-value cutoff <output id="outP" class="mono">0.05</output></label>
+        <input type="range" id="rngP" min="0" max="100" step="1" value="50">
+        <div class="row tight">
+          <input type="number" id="inpP" class="mono" min="0" max="1" step="0.001" value="0.05">
+          <div class="chipset" id="pPresets">
+            <button class="chip" data-p="0.05" type="button">0.05</button>
+            <button class="chip" data-p="0.01" type="button">0.01</button>
+            <button class="chip" data-p="0.001" type="button">0.001</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field slider-field">
+        <label for="inpFc">|log<sub>2</sub> FC| cutoff <output id="outFc" class="mono">1.00</output></label>
+        <input type="range" id="rngFc" min="0" max="600" step="1" value="100">
+        <div class="row tight">
+          <input type="number" id="inpFc" class="mono" min="0" step="0.1" value="1">
+          <div class="chipset" id="fcPresets">
+            <button class="chip" data-fc="0" type="button">none</button>
+            <button class="chip" data-fc="0.585" type="button">1.5×</button>
+            <button class="chip" data-fc="1" type="button">2×</button>
+            <button class="chip" data-fc="2" type="button">4×</button>
+          </div>
+        </div>
+        <p class="hint" id="fcHint">|log2 FC| ≥ 1 is a two-fold change.</p>
+      </div>
+
+      <div class="tally" id="tally">
+        <div class="tally-row up"><span class="swatch"></span><span class="tally-name">Up</span><span class="tally-n mono" id="tlUp">0</span></div>
+        <div class="tally-row down"><span class="swatch"></span><span class="tally-name">Down</span><span class="tally-n mono" id="tlDown">0</span></div>
+        <div class="tally-row ns"><span class="swatch"></span><span class="tally-name">Not significant</span><span class="tally-n mono" id="tlNs">0</span></div>
+      </div>
+      <div class="notice soft" id="thresholdNotice" hidden></div>
+    </section>
+
+    <!-- ---------------- 03 STYLE ---------------- -->
+    <section class="panel" data-panel="style">
+      <h2 class="panel-title">Style<em>figure appearance</em></h2>
+
+      <h3 class="sub">Typography</h3>
+      <div class="field">
+        <label for="selFont">Font family</label>
+        <select id="selFont"></select>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="inpTickSize">Tick size</label><input type="number" id="inpTickSize" class="mono" min="4" max="40" step="0.5" value="12"></div>
+        <div class="field"><label for="inpAxisSize">Axis title</label><input type="number" id="inpAxisSize" class="mono" min="4" max="48" step="0.5" value="14"></div>
+        <div class="field"><label for="inpLabelSize">Point labels</label><input type="number" id="inpLabelSize" class="mono" min="4" max="40" step="0.5" value="11"></div>
+        <div class="field"><label for="inpTitleSize">Plot title</label><input type="number" id="inpTitleSize" class="mono" min="4" max="48" step="0.5" value="17"></div>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="chkLabelBold"> bold labels</label>
+        <label class="check"><input type="checkbox" id="chkLabelItalic"> italic labels</label>
+      </div>
+
+      <h3 class="sub">Data points</h3>
+      <div class="field slider-field">
+        <label for="rngSize">Point size <output id="outSize" class="mono">3.2</output></label>
+        <input type="range" id="rngSize" min="5" max="120" step="1" value="32">
+      </div>
+      <div class="field slider-field">
+        <label for="rngOpacity">Opacity <output id="outOpacity" class="mono">0.62</output></label>
+        <input type="range" id="rngOpacity" min="2" max="100" step="1" value="62">
+      </div>
+      <div class="field slider-field">
+        <label for="rngStroke">Outline width <output id="outStroke" class="mono">0</output></label>
+        <input type="range" id="rngStroke" min="0" max="30" step="1" value="0">
+      </div>
+
+      <h3 class="sub">Colours</h3>
+      <div class="swatches">
+        <label class="sw"><input type="color" id="colUp" value="#e34948"><span>Up</span></label>
+        <label class="sw"><input type="color" id="colDown" value="#2a78d6"><span>Down</span></label>
+        <label class="sw"><input type="color" id="colNs" value="#b9b9b3"><span>n.s.</span></label>
+        <label class="sw"><input type="color" id="colHighlight" value="#111111"><span>Label ring</span></label>
+        <label class="sw"><input type="color" id="colBg" value="#ffffff"><span>Background</span></label>
+        <label class="sw"><input type="color" id="colGrid" value="#e9e9e4"><span>Grid</span></label>
+      </div>
+      <div class="row">
+        <button class="btn small ghost" id="btnPalDefault" type="button">Default</button>
+        <button class="btn small ghost" id="btnPalColorblind" type="button">Colour-blind safe</button>
+        <button class="btn small ghost" id="btnPalMono" type="button">Greyscale</button>
+      </div>
+
+      <h3 class="sub">Frame &amp; text</h3>
+      <div class="field"><label for="inpTitle">Plot title</label><input type="text" id="inpTitle" placeholder="(none)"></div>
+      <div class="grid2">
+        <div class="field"><label for="inpXLabel">x-axis label</label><input type="text" id="inpXLabel"></div>
+        <div class="field"><label for="inpYLabel">y-axis label</label><input type="text" id="inpYLabel"></div>
+        <div class="field"><label for="inpWidth">Width (px)</label><input type="number" id="inpWidth" class="mono" min="200" max="4000" step="10" value="820"></div>
+        <div class="field"><label for="inpHeight">Height (px)</label><input type="number" id="inpHeight" class="mono" min="200" max="4000" step="10" value="620"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label for="selAxisStyle">Axis style</label>
+          <select id="selAxisStyle"><option value="lines">L-shaped</option><option value="box">Full box</option><option value="none">None</option></select>
+        </div>
+        <div class="field"><label for="selLegendPos">Legend</label>
+          <select id="selLegendPos">
+            <option value="top-right">Top right</option><option value="top-left">Top left</option>
+            <option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option>
+            <option value="none">Hidden</option>
+          </select>
+        </div>
+      </div>
+      <div class="row wrap">
+        <label class="check"><input type="checkbox" id="chkGrid" checked> grid</label>
+        <label class="check"><input type="checkbox" id="chkThresholds" checked> cutoff lines</label>
+        <label class="check"><input type="checkbox" id="chkSymmetric" checked> symmetric x-axis</label>
+        <label class="check"><input type="checkbox" id="chkLegendCounts" checked> counts in legend</label>
+      </div>
+    </section>
+
+    <!-- ---------------- 04 LABEL PROTEINS ---------------- -->
+    <section class="panel" data-panel="proteins">
+      <h2 class="panel-title">Label<em>annotate proteins of interest</em></h2>
+
+      <div class="field">
+        <label for="proteinList">Protein list</label>
+        <textarea id="proteinList" class="mono" rows="8" placeholder="TOMM22&#10;MICOS10&#10;Q92506&#10;HSD17B8, IL6; CNTROB"></textarea>
+        <p class="hint">Gene symbols or UniProt accessions — one per line, or separated by commas, semicolons or spaces. Isoform suffixes (P12345-2) and protein groups are matched automatically.</p>
+      </div>
+      <div class="row">
+        <button class="btn small" id="btnApplyList" type="button">Annotate</button>
+        <button class="btn small ghost" id="btnClearList" type="button">Clear</button>
+      </div>
+
+      <div class="match-report" id="matchReport" hidden></div>
+
+      <h3 class="sub">Automatic labels</h3>
+      <div class="field slider-field">
+        <label for="rngAutoLabel">Label top <output id="outAutoLabel" class="mono">0</output> by significance</label>
+        <input type="range" id="rngAutoLabel" min="0" max="60" step="1" value="0">
+      </div>
+      <div class="field">
+        <label for="selLabelText">Label shows</label>
+        <select id="selLabelText">
+          <option value="gene">Gene name</option>
+          <option value="id">Protein ID</option>
+          <option value="both">Gene (ID)</option>
+          <option value="name">Entry name</option>
+        </select>
+      </div>
+      <div class="row wrap">
+        <label class="check"><input type="checkbox" id="chkHalo" checked> white halo</label>
+        <label class="check"><input type="checkbox" id="chkLeader" checked> leader lines</label>
+      </div>
+      <p class="hint">Click any point on the plot to pin or unpin its label. Drag a label to reposition it; double-click a label to snap it back.</p>
+      <button class="btn small ghost block" id="btnResetLabelPos" type="button">Reset all label positions</button>
+
+      <h3 class="sub">Pinned</h3>
+      <div class="pinlist" id="pinList"><p class="empty">Nothing pinned yet.</p></div>
+    </section>
+
+    <!-- ---------------- 05 GO CLUSTERS ---------------- -->
+    <section class="panel" data-panel="clusters">
+      <h2 class="panel-title">GO clusters<em>organelles &amp; pathways</em></h2>
+
+      <div class="grid2">
+        <div class="field"><label for="selOrganism">Organism</label><select id="selOrganism"></select></div>
+        <div class="field"><label for="selSource">Source</label>
+          <select id="selSource">
+            <option value="library">Gene-set library</option>
+            <option value="uniprot">UniProt GO (live)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field" id="libField">
+        <label for="selLibrary">Library</label>
+        <select id="selLibrary"></select>
+        <div class="row tight">
+          <button class="btn small" id="btnLoadLib" type="button">Load library</button>
+          <span class="hint" id="libStatus">not loaded</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="inpTermSearch">Search organelle, compartment or pathway</label>
+        <div class="row tight">
+          <input type="search" id="inpTermSearch" placeholder="mitochondrion, ribosome, glycolysis…">
+          <button class="btn small" id="btnTermSearch" type="button">Search</button>
+        </div>
+        <div class="chipset" id="termQuickPicks">
+          <button class="chip" type="button">mitochond</button>
+          <button class="chip" type="button">ribosom</button>
+          <button class="chip" type="button">endoplasmic reticulum</button>
+          <button class="chip" type="button">nucleolus</button>
+          <button class="chip" type="button">lysosome</button>
+          <button class="chip" type="button">proteasome</button>
+          <button class="chip" type="button">centrosome</button>
+          <button class="chip" type="button">glycolysis</button>
+        </div>
+      </div>
+
+      <div class="results" id="termResults"><p class="empty">Search a compartment or pathway to overlay it on the plot.</p></div>
+
+      <h3 class="sub">Active clusters</h3>
+      <div class="clusterlist" id="clusterList"><p class="empty">No clusters yet.</p></div>
+
+      <details class="fold">
+        <summary>Add a custom cluster</summary>
+        <div class="field"><label for="inpCustomName">Cluster name</label><input type="text" id="inpCustomName" placeholder="My gene set"></div>
+        <div class="field"><label for="inpCustomGenes">Genes / accessions</label><textarea id="inpCustomGenes" class="mono" rows="4" placeholder="TOMM22 MICOS10 TIMM23"></textarea></div>
+        <button class="btn small block" id="btnAddCustomCluster" type="button">Add cluster</button>
+      </details>
+
+      <div class="notice" id="clusterNotice" hidden></div>
+    </section>
+
+    <!-- ---------------- 06 PATHWAY ANALYSIS ---------------- -->
+    <section class="panel" data-panel="pathways">
+      <h2 class="panel-title">Pathways<em>enrichment analysis</em></h2>
+
+      <div class="field">
+        <label for="selEnrichSet">Test which proteins?</label>
+        <select id="selEnrichSet">
+          <option value="up">Significantly up</option>
+          <option value="down">Significantly down</option>
+          <option value="both">All significant (up + down)</option>
+          <option value="labelled">Labelled / pinned proteins</option>
+          <option value="cluster">A cluster</option>
+        </select>
+        <p class="hint" id="enrichSetHint"></p>
+      </div>
+
+      <div class="field">
+        <label for="selProvider">Engine</label>
+        <select id="selProvider">
+          <option value="gprofiler">g:Profiler (multi-source, g:SCS correction)</option>
+          <option value="enrichr">Enrichr (single library)</option>
+          <option value="builtin">Built-in (hypergeometric, runs locally)</option>
+        </select>
+      </div>
+
+      <div class="field" id="gpSourcesField">
+        <label>Sources</label>
+        <div class="chipset toggles" id="gpSources">
+          <button class="chip on" data-src="GO:BP" type="button">GO:BP</button>
+          <button class="chip on" data-src="GO:CC" type="button">GO:CC</button>
+          <button class="chip on" data-src="GO:MF" type="button">GO:MF</button>
+          <button class="chip on" data-src="KEGG" type="button">KEGG</button>
+          <button class="chip on" data-src="REAC" type="button">Reactome</button>
+          <button class="chip" data-src="WP" type="button">WikiPathways</button>
+          <button class="chip" data-src="CORUM" type="button">CORUM</button>
+          <button class="chip" data-src="TF" type="button">TF</button>
+        </div>
+      </div>
+
+      <div class="field" id="enrichLibField" hidden>
+        <label for="selEnrichLib">Library</label>
+        <select id="selEnrichLib"></select>
+      </div>
+
+      <div class="grid2">
+        <div class="field"><label for="inpEnrichP">Significance cutoff</label><input type="number" id="inpEnrichP" class="mono" min="0" max="1" step="0.001" value="0.05"></div>
+        <div class="field"><label for="selBackground">Background</label>
+          <select id="selBackground">
+            <option value="dataset">Proteins in this file</option>
+            <option value="annotated">All annotated genes</option>
+          </select>
+        </div>
+      </div>
+      <p class="hint">Using the proteins actually measured in your experiment as the background is the statistically correct choice for a proteomics dataset.</p>
+
+      <button class="btn block" id="btnRunEnrich" type="button">Run enrichment</button>
+      <div class="notice" id="enrichNotice" hidden></div>
+      <div class="enrich-summary" id="enrichSummary" hidden></div>
+    </section>
+
+    <!-- ---------------- 07 EXPORT ---------------- -->
+    <section class="panel" data-panel="export">
+      <h2 class="panel-title">Export<em>figures &amp; tables</em></h2>
+
+      <h3 class="sub">Figure</h3>
+      <div class="field">
+        <label for="selPngScale">PNG resolution</label>
+        <select id="selPngScale">
+          <option value="1">1× (screen)</option>
+          <option value="2">2× (~150 dpi)</option>
+          <option value="4" selected>4× (~300 dpi)</option>
+          <option value="8">8× (~600 dpi)</option>
+        </select>
+        <p class="hint" id="pngHint"></p>
+      </div>
+      <button class="btn block" id="btnPng" type="button">Download PNG</button>
+      <button class="btn block" id="btnSvg" type="button">Download SVG (vector, editable)</button>
+      <p class="hint">The SVG opens in Illustrator, Inkscape or Affinity with every layer — points, labels, axes and legend — as a separate, editable group.</p>
+
+      <h3 class="sub">Tables</h3>
+      <button class="btn ghost block" id="btnCsvAll" type="button">All proteins + classification (CSV)</button>
+      <button class="btn ghost block" id="btnCsvSig" type="button">Significant proteins only (CSV)</button>
+      <button class="btn ghost block" id="btnCsvEnrich" type="button">Enrichment results (CSV)</button>
+
+      <h3 class="sub">Session</h3>
+      <button class="btn ghost block" id="btnSaveSession" type="button">Save settings (JSON)</button>
+      <button class="btn ghost block" id="btnLoadSession" type="button">Restore settings…</button>
+      <input type="file" id="sessionInput" accept=".json" hidden>
+      <p class="hint">Settings cover cutoffs, styling, labels and clusters — not the data itself, so you can reuse one look across experiments.</p>
+      <button class="btn ghost block danger" id="btnClearCache" type="button">Clear cached annotations</button>
+    </section>
+  </aside>
+
+  <!-- ============================ STAGE ============================ -->
+  <main class="stage" id="stage">
+    <div class="stage-bar">
+      <div class="stage-tools">
+        <button class="tool" id="btnZoomOut" type="button" title="Zoom out">−</button>
+        <button class="tool" id="btnZoomIn" type="button" title="Zoom in">+</button>
+        <button class="tool wide" id="btnResetView" type="button" title="Reset view">Fit</button>
+        <span class="tool-sep"></span>
+        <button class="tool wide is-on" id="btnModePan" type="button" title="Drag to pan">Pan</button>
+        <button class="tool wide" id="btnModeSelect" type="button" title="Drag a box to label everything inside">Box label</button>
+      </div>
+      <div class="stage-status" id="stageStatus">Load a table to begin</div>
+    </div>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="figure-shadow">
+        <canvas id="plot" width="820" height="620"></canvas>
+        <div class="selection-box" id="selectionBox" hidden></div>
+      </div>
+      <div class="empty-state" id="emptyState">
+        <div class="es-glyph" aria-hidden="true"></div>
+        <h2>No data loaded</h2>
+        <p>Drop an .xlsx, .csv or .tsv results table onto the panel on the left — or load the example dataset to explore the tool.</p>
+        <button class="btn" id="btnDemo2" type="button">Load example dataset</button>
+      </div>
+    </div>
+
+    <!-- results drawer -->
+    <section class="drawer" id="drawer" data-state="closed">
+      <button class="drawer-handle" id="drawerHandle" type="button">
+        <span class="dh-title" id="drawerTitle">Enrichment results</span>
+        <span class="dh-meta" id="drawerMeta"></span>
+        <span class="dh-chev" aria-hidden="true"></span>
+      </button>
+      <div class="drawer-body">
+        <div class="table-tools">
+          <input type="search" id="enrichFilter" placeholder="Filter terms…">
+          <span class="hint" id="enrichProvider"></span>
+        </div>
+        <div class="table-scroll">
+          <table class="dtable" id="enrichTable">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="name">Term</th>
+                <th class="sortable" data-sort="source">Source</th>
+                <th class="sortable num" data-sort="p_adjusted">p<sub>adj</sub></th>
+                <th class="sortable num" data-sort="intersection_size">Hits</th>
+                <th class="sortable num" data-sort="term_size">Size</th>
+                <th class="sortable num" data-sort="fold_enrichment">Fold</th>
+                <th>Annotate</th>
+              </tr>
+            </thead>
+            <tbody id="enrichBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============================ HOVER CARD ============================ -->
+<div class="tooltip" id="tooltip" hidden>
+  <div class="tt-head">
+    <span class="tt-gene" id="ttGene"></span>
+    <span class="tt-badge" id="ttBadge"></span>
+  </div>
+  <div class="tt-ids mono" id="ttIds"></div>
+  <div class="tt-stats" id="ttStats"></div>
+  <div class="tt-desc" id="ttDesc"></div>
+  <dl class="tt-ann" id="ttAnn">
+    <div class="tt-row" id="ttLocRow"><dt>Location</dt><dd id="ttLoc"></dd></div>
+    <div class="tt-row" id="ttPathRow"><dt>Pathway</dt><dd id="ttPath"></dd></div>
+    <div class="tt-row" id="ttFuncRow"><dt>Function</dt><dd id="ttFunc"></dd></div>
+  </dl>
+  <div class="tt-clusters" id="ttClusters"></div>
+  <div class="tt-foot" id="ttFoot"></div>
+</div>
+
+<!-- ============================ TOASTS ============================ -->
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- ============================ GUIDE ============================ -->
+<div class="modal" id="helpModal" hidden>
+  <div class="modal-card">
+    <button class="modal-close" id="btnHelpClose" type="button" aria-label="Close">×</button>
+    <h2>Volcano Studio</h2>
+    <p class="lede">Everything runs in your browser. Your data is never uploaded — only gene and protein <em>names</em> are ever sent out, and only when you ask for annotation or enrichment.</p>
+    <ol class="guide">
+      <li><b>Load</b> an .xlsx, .csv or .tsv results table. Columns are detected automatically; check the mapping if your file is unusual.</li>
+      <li><b>Set cutoffs</b> — p-value and |log<sub>2</sub> FC|. Counts update live, and you can switch between raw and adjusted p-values.</li>
+      <li><b>Hover</b> any point for its protein ID, gene, statistics, subcellular location, pathway and function.</li>
+      <li><b>Label</b> proteins by pasting a list, clicking points, or box-selecting a region. Drag labels to place them.</li>
+      <li><b>Overlay GO clusters</b> — search an organelle or pathway and every matching protein is recoloured and reshaped.</li>
+      <li><b>Run pathway analysis</b> on your up, down or labelled sets, then click a result to annotate its genes on the plot.</li>
+      <li><b>Export</b> a 300 dpi PNG or a layered SVG for the figure, plus CSVs of the classification and enrichment tables.</li>
+    </ol>
+    <h3>Keyboard</h3>
+    <ul class="keys">
+      <li><kbd>scroll</kbd> zoom · <kbd>drag</kbd> pan · <kbd>shift</kbd>+<kbd>drag</kbd> box-label · <kbd>double-click</kbd> reset view</li>
+      <li><kbd>click</kbd> a point to pin its label · <kbd>Esc</kbd> closes this dialog</li>
+    </ul>
+  </div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/xlsx.js"></script>
+<script src="js/data.js"></script>
+<script src="js/stats.js"></script>
+<script src="js/surface.js"></script>
+<script src="js/plot.js"></script>
+<script src="js/api.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
