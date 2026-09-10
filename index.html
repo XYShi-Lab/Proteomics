@@ -71,9 +71,9 @@
       </details>
 
       <button class="btn ghost block" id="btnDemo" type="button">Load example dataset</button>
-      <button class="btn ghost block" id="btnPresetPng" type="button">Preset format from a PNG…</button>
-      <button class="btn ghost block" id="btnPresetJson" type="button">Upload JSON to preset settings…</button>
-      <p class="hint">Reuse the look of an earlier figure: pick a settings <code>.json</code>, or any PNG this site exported, and its cutoffs, styling, labels and clusters are applied to the data you load.</p>
+      <button class="btn ghost block" id="btnPresetPng" type="button">Load PNG to preset format</button>
+      <button class="btn ghost block" id="btnPresetJson" type="button">Load JSON to preset format</button>
+      <p class="hint">Reuse the look of an earlier figure: pick a format <code>.json</code>, or any PNG this site exported, and its cutoffs, centring, styling, labels, clusters and legends are applied to the data you load.</p>
 
       <div class="field" id="sheetField" hidden>
         <label for="selSheet">Worksheet</label>
@@ -502,7 +502,7 @@
       <input type="file" id="sessionInput" accept=".json" hidden>
       <input type="file" id="pngInput" accept="image/png,.png" hidden>
       <p class="hint">Format covers cutoffs, centring, styling, labels, clusters and legends — not the data — so one look can be reused across experiments. Every PNG exported above already carries this same format inside the image file.</p>
-      <p class="hint">To apply a saved format, use <b>Preset format</b> in panel 01.</p>
+      <p class="hint">To apply a saved format, use <b>Load JSON to preset format</b> in panel 01.</p>
       <button class="btn ghost block danger" id="btnClearCache" type="button">Clear cached annotations</button>
     </section>
   </aside>

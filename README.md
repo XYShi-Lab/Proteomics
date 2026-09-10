@@ -226,8 +226,8 @@ chance to detect most of them.
 - **CSV** — all proteins with classification, significant only, or the
   enrichment table.
 - **Format JSON** — cutoffs, centring, styling, labels, clusters and legends, so
-  one look can be reused across experiments. Apply a saved format (or a PNG's)
-  from **Preset format** in the Data panel.
+  one look can be reused across experiments. Apply a saved format with **Load
+  JSON to preset format** (or **Load PNG to preset format**) in the Data panel.
 - **Settings inside the PNG.** Every exported PNG carries its own settings in an
   iTXt chunk. Drop that PNG back onto the app — or hand it to a colleague — and
   the entire format is restored: cutoffs, centring, fonts, colours, labels,
