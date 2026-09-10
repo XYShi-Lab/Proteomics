@@ -13,14 +13,19 @@ enrichment.
 
 ## Running it
 
-**Option 1 — just open it.** Double-click `index.html`. No build, no install,
-no server. (Loading `.xlsx` files needs a current Chrome, Edge, Firefox or
-Safari — see [Browser support](#browser-support).)
+**Option 1 — one file.** Download **`volcano-studio.html`** and double-click it.
+The whole app is inside that single file: no checkout, no server, nothing else
+to keep next to it. Easy to email to a collaborator or keep on a USB stick.
 
-**Option 2 — GitHub Pages.** Enable Pages for this repository on the branch you
-want, and the site is served from the repository root.
+**Option 2 — the repository.** Double-click `index.html`. Identical app, split
+into readable source files. (Loading `.xlsx` needs a current Chrome, Edge,
+Firefox or Safari — see [Browser support](#browser-support).)
 
-**Option 3 — a local server**, if you prefer one:
+**Option 3 — GitHub Pages.** Enable Pages for this repository on the branch you
+want, and the site is served from the repository root. (Pages on a *private*
+repository needs a paid GitHub plan.)
+
+**Option 4 — a local server**, if you prefer one:
 
 ```bash
 python3 -m http.server 8000     # then open http://localhost:8000
@@ -209,9 +214,17 @@ js/api.js               UniProt, Enrichr, g:Profiler, QuickGO/OLS/GO clients
 js/demo.js              simulated example dataset
 js/app.js               state, wiring, interaction
 data/demo_proteomics.csv  the example dataset as a file
+tools/build-single.js   bundles all of the above into one .html file
+volcano-studio.html     the single-file build (generated - do not edit by hand)
 ```
 
-No build step, no package manager, no third-party runtime dependencies.
+No build step, no package manager, no third-party runtime dependencies. The
+files under `css/` and `js/` are the source of truth; after changing them,
+regenerate the single-file build with:
+
+```bash
+node tools/build-single.js
+```
 
 ---
 
