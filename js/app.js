@@ -123,6 +123,7 @@ window.VP = window.VP || {};
     enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set() },
     net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25, topN: 6, colorMap: new Map() },
     legendHover: false,
+    clusterLegendHover: false,
     sourceName: '',
     termHits: [],
   };
@@ -344,6 +345,15 @@ window.VP = window.VP || {};
       pCutoff: state.thresholds.pCutoff,
       fcCutoff: state.thresholds.fcCutoff,
     });
+    // Per-cluster up/down tallies follow the cutoffs, so refresh them here.
+    for (const c of state.clusters) { c.up = 0; c.down = 0; }
+    for (const r of state.records) {
+      if (!r.clusters) continue;
+      for (const c of r.clusters) {
+        if (r.cls === 'up') c.up++;
+        else if (r.cls === 'down') c.down++;
+      }
+    }
     state.thresholds.fcCutoff = Math.abs(state.thresholds.fcCutoff);
     updateLabels();
     $('#rdUp').textContent = state.counts.up.toLocaleString();
@@ -385,6 +395,81 @@ window.VP = window.VP || {};
     }
     $('#rdLabelled').textContent = String(n);
     renderPinList();
+  }
+
+  /* ======================= label history ======================= */
+
+  /* Labelling is fiddly work - box-select a region, drag a few names, change
+     your mind. A dedicated undo stack covers exactly those actions, separately
+     from anything else in the app. */
+  const labelHistory = { past: [], future: [], limit: 80 };
+
+  function labelSnapshot() {
+    return {
+      pinned: Array.from(state.pinned),
+      list: Array.from(state.listMatched),
+      offsets: JSON.parse(JSON.stringify(state.labelOffsets)),
+      autoN: state.autoLabelN,
+      text: $('#proteinList') ? $('#proteinList').value : '',
+    };
+  }
+
+  function pushLabelHistory(snap) {
+    labelHistory.past.push(snap || labelSnapshot());
+    if (labelHistory.past.length > labelHistory.limit) labelHistory.past.shift();
+    labelHistory.future.length = 0;
+    updateHistoryUI();
+  }
+
+  function applyLabelSnapshot(snap) {
+    state.pinned = new Set(snap.pinned);
+    state.listMatched = new Set(snap.list);
+    state.labelOffsets = snap.offsets || {};
+    state.autoLabelN = snap.autoN || 0;
+    if ($('#proteinList')) $('#proteinList').value = snap.text || '';
+    $('#rngAutoLabel').value = String(state.autoLabelN);
+    $('#outAutoLabel').textContent = String(state.autoLabelN);
+    $('#matchReport').hidden = !(snap.text && snap.text.trim());
+    recompute();
+    updateHistoryUI();
+  }
+
+  function undoLabels() {
+    if (!labelHistory.past.length) return;
+    labelHistory.future.push(labelSnapshot());
+    applyLabelSnapshot(labelHistory.past.pop());
+  }
+
+  function redoLabels() {
+    if (!labelHistory.future.length) return;
+    labelHistory.past.push(labelSnapshot());
+    applyLabelSnapshot(labelHistory.future.pop());
+  }
+
+  function updateHistoryUI() {
+    const u = $('#btnUndoLabels'), r = $('#btnRedoLabels');
+    if (u) u.disabled = !labelHistory.past.length;
+    if (r) r.disabled = !labelHistory.future.length;
+  }
+
+  function clearAllLabels() {
+    if (!state.pinned.size && !state.listMatched.size && !state.autoLabelN &&
+        !$('#proteinList').value.trim()) {
+      toast('There are no labels to remove.', '');
+      return;
+    }
+    pushLabelHistory();
+    const n = state.pinned.size + state.listMatched.size;
+    state.pinned.clear();
+    state.listMatched.clear();
+    state.labelOffsets = {};
+    state.autoLabelN = 0;
+    $('#proteinList').value = '';
+    $('#rngAutoLabel').value = '0';
+    $('#outAutoLabel').textContent = '0';
+    $('#matchReport').hidden = true;
+    recompute();
+    toast(n + ' label(s) removed. Undo is available.', 'ok', 'Cleared');
   }
 
   /* ======================= matching ======================= */
@@ -465,6 +550,8 @@ window.VP = window.VP || {};
     for (const r of state.records) r.clusters = null;
     for (const c of state.clusters) {
       c.matched = 0;
+      c.up = 0;
+      c.down = 0;
       if (!c.visible) continue;
       for (const r of state.records) {
         let hit = false;
@@ -478,6 +565,8 @@ window.VP = window.VP || {};
         if (hit) {
           (r.clusters || (r.clusters = [])).push(c);
           c.matched++;
+          if (r.cls === 'up') c.up++;
+          else if (r.cls === 'down') c.down++;
         }
       }
     }
@@ -763,10 +852,15 @@ window.VP = window.VP || {};
   /* Hit test the legend box. Any placement can be grabbed: picking it up simply
      switches it to floating, which is what people try first. */
   function legendAt(px, py) {
-    if (!state.geom || !state.config.legend.show) return null;
-    const L = VP.plot.legendLayout(state, state.geom);
-    if (!L) return null;
-    if (px >= L.bx && px <= L.bx + L.boxW && py >= L.by && py <= L.by + L.boxH) return L;
+    if (!state.geom) return null;
+    const inside = (L) => L && px >= L.bx && px <= L.bx + L.boxW && py >= L.by && py <= L.by + L.boxH;
+    // Cluster legend first: when both are on the right it sits outermost.
+    const cl = VP.plot.clusterLegendLayout(state, state.geom);
+    if (inside(cl)) { cl.which = 'cluster'; return cl; }
+    if (state.config.legend.show) {
+      const L = VP.plot.legendLayout(state, state.geom);
+      if (inside(L)) { L.which = 'class'; return L; }
+    }
     return null;
   }
 
@@ -801,7 +895,8 @@ window.VP = window.VP || {};
         drawSelectionBox(drag);
         drag.moved = true;
       } else if (drag.kind === 'legend') {
-        state.config.legend.float = { x: p.x - drag.dx, y: p.y - drag.dy };
+        const target = drag.which === 'cluster' ? state.config.clusterLegend : state.config.legend;
+        target.float = { x: p.x - drag.dx, y: p.y - drag.dy };
         drag.moved = true;
         render();
       } else if (drag.kind === 'label') {
@@ -816,9 +911,12 @@ window.VP = window.VP || {};
     }
 
     const onLegend = legendAt(p.x, p.y);
-    if (!!onLegend !== state.legendHover) {
-      state.legendHover = !!onLegend;
-      if (state.legendHover) setStatus('Drag the legend to move it anywhere on the figure');
+    const wantClass = !!onLegend && onLegend.which === 'class';
+    const wantCluster = !!onLegend && onLegend.which === 'cluster';
+    if (wantClass !== state.legendHover || wantCluster !== state.clusterLegendHover) {
+      state.legendHover = wantClass;
+      state.clusterLegendHover = wantCluster;
+      if (onLegend) setStatus('Drag the legend to move it anywhere on the figure');
       render();
     }
     const hit = onLegend ? null : VP.plot.hitTest(state.index, p.x, p.y);
@@ -842,7 +940,11 @@ window.VP = window.VP || {};
   canvas.addEventListener('mouseleave', () => {
     if (drag) return;
     hideTooltip();
-    if (state.legendHover) { state.legendHover = false; render(); }
+    if (state.legendHover || state.clusterLegendHover) {
+      state.legendHover = false;
+      state.clusterLegendHover = false;
+      render();
+    }
   });
 
   canvas.addEventListener('mousedown', (ev) => {
@@ -852,12 +954,18 @@ window.VP = window.VP || {};
     const lg = legendAt(p.x, p.y);
     if (lg) {
       // Pick it up wherever it was: it becomes free-floating from here.
-      if (state.config.legend.position !== 'floating') {
+      if (lg.which === 'cluster') {
+        if (state.config.clusterLegend.position !== 'floating') {
+          state.config.clusterLegend.position = 'floating';
+          state.config.clusterLegend.float = { x: lg.bx, y: lg.by };
+          $('#selClPos').value = 'floating';
+        }
+      } else if (state.config.legend.position !== 'floating') {
         state.config.legend.position = 'floating';
         state.config.legend.float = { x: lg.bx, y: lg.by };
         $('#selLegendPos').value = 'floating';
       }
-      drag = { kind: 'legend', dx: p.x - lg.bx, dy: p.y - lg.by, moved: false };
+      drag = { kind: 'legend', which: lg.which, dx: p.x - lg.bx, dy: p.y - lg.by, moved: false };
       hideTooltip();
       ev.preventDefault();
       return;
@@ -871,6 +979,7 @@ window.VP = window.VP || {};
         baseDx: off ? off.dx : L.x - L.px,
         baseDy: off ? off.dy : L.y - L.py,
         moved: false,
+        snapshot: labelSnapshot(),
       };
       hideTooltip();
       ev.preventDefault();
@@ -895,6 +1004,7 @@ window.VP = window.VP || {};
       $('#selectionBox').hidden = true;
       if (d.moved && Math.abs(d.curX - d.startX) > 4 && Math.abs(d.curY - d.startY) > 4) {
         const inside = VP.plot.pointsInRect(state.index, d.startX, d.startY, d.curX, d.curY);
+        pushLabelHistory();
         inside.forEach((r) => state.pinned.add(r.i));
         toast(inside.length + ' protein(s) labelled.', 'ok', 'Box label');
         recompute();
@@ -903,7 +1013,8 @@ window.VP = window.VP || {};
     }
     if (d.kind === 'legend') return;
     if (d.kind === 'label') {
-      if (!d.moved) { togglePin(d.rec); }
+      if (!d.moved) togglePin(d.rec);
+      else pushLabelHistory(d.snapshot);
       return;
     }
     if (d.kind === 'pan' && !d.moved) {
@@ -913,6 +1024,7 @@ window.VP = window.VP || {};
   });
 
   function togglePin(rec) {
+    pushLabelHistory();
     if (state.pinned.has(rec.i)) state.pinned.delete(rec.i);
     else state.pinned.add(rec.i);
     recompute();
@@ -1552,6 +1664,7 @@ window.VP = window.VP || {};
   function exportPng(scale) {
     if (!state.records.length) { toast('Load some data first.', 'error'); return; }
     state.legendHover = false;
+    state.clusterLegendHover = false;
     const cfg = state.config;
     const c = document.createElement('canvas');
     c.width = Math.round(cfg.width * scale);
@@ -1578,6 +1691,7 @@ window.VP = window.VP || {};
   function exportSvg() {
     if (!state.records.length) { toast('Load some data first.', 'error'); return; }
     state.legendHover = false;
+    state.clusterLegendHover = false;
     const cfg = state.config;
     const s = VP.surface.svg(cfg.width, cfg.height);
     VP.plot.draw(s, state);
@@ -1632,7 +1746,7 @@ window.VP = window.VP || {};
   }
 
   function saveSession() {
-    U.downloadText(JSON.stringify(sessionData(), null, 2), 'shi_lab_volcano_settings.json', 'application/json');
+    U.downloadText(JSON.stringify(sessionData(), null, 2), 'shi_lab_volcano_format.json', 'application/json');
   }
 
   function restoreSession(json) {
@@ -1653,6 +1767,9 @@ window.VP = window.VP || {};
           total: (c.genes || []).length, matched: 0,
         }));
       }
+      // Older settings files predate the cluster legend.
+      if (!state.config.clusterLegend) state.config.clusterLegend = VP.plot.defaultConfig().clusterLegend;
+      if (!state.config.clusterLegend.counts) state.config.clusterLegend.counts = { up: true, down: false, total: true };
       syncControlsFromState();
       applyCentring();
       applyList(false);
@@ -1739,6 +1856,18 @@ window.VP = window.VP || {};
     $('#selLabelText').value = state.labelTextMode;
     $('#selOrganism').value = state.organism;
     $('#selCentre').value = state.centre;
+    const cl = state.config.clusterLegend;
+    $('#selClPos').value = cl.show ? cl.position : 'none';
+    $('#selClFont').value = cl.family || '';
+    $('#inpClTitle').value = cl.title || '';
+    $('#inpClSize').value = cl.size;
+    $('#inpClTitleSize').value = cl.titleSize;
+    $('#inpClCols').value = cl.columns;
+    $('#inpClW').value = cl.width;
+    $('#inpClH').value = cl.height;
+    $('#chkClUp').checked = !!cl.counts.up;
+    $('#chkClDown').checked = !!cl.counts.down;
+    $('#chkClTotal').checked = !!cl.counts.total;
     if (state.syncOutline) state.syncOutline();
     updatePngHint();
   }
@@ -1754,6 +1883,7 @@ window.VP = window.VP || {};
   }
 
   function applyList(announce) {
+    if (announce !== false) pushLabelHistory();
     const terms = parseTerms($('#proteinList').value);
     state.listMatched.clear();
     if (!terms.length) {
@@ -1990,18 +2120,31 @@ window.VP = window.VP || {};
     $('#btnApplyList').addEventListener('click', () => applyList(true));
     $('#proteinList').addEventListener('input', debounce(() => applyList(false), 500));
     $('#btnClearList').addEventListener('click', () => {
+      pushLabelHistory();
       $('#proteinList').value = '';
       state.listMatched.clear();
       $('#matchReport').hidden = true;
       recompute();
     });
+    let autoLabelDragSnap = null;
     $('#rngAutoLabel').addEventListener('input', () => {
+      if (!autoLabelDragSnap) autoLabelDragSnap = labelSnapshot();
       state.autoLabelN = parseInt($('#rngAutoLabel').value, 10);
       $('#outAutoLabel').textContent = String(state.autoLabelN);
       recompute();
     });
+    $('#rngAutoLabel').addEventListener('change', () => {
+      if (autoLabelDragSnap) { pushLabelHistory(autoLabelDragSnap); autoLabelDragSnap = null; }
+    });
     $('#selLabelText').addEventListener('change', (e) => { state.labelTextMode = e.target.value; recompute(); });
-    $('#btnResetLabelPos').addEventListener('click', () => { state.labelOffsets = {}; render(); });
+    $('#btnResetLabelPos').addEventListener('click', () => {
+      pushLabelHistory();
+      state.labelOffsets = {};
+      render();
+    });
+    $('#btnUndoLabels').addEventListener('click', undoLabels);
+    $('#btnRedoLabels').addEventListener('click', redoLabels);
+    $('#btnClearAllLabels').addEventListener('click', clearAllLabels);
 
     /* --- organism / library / GO --- */
     const orgSel = $('#selOrganism');
@@ -2076,6 +2219,39 @@ window.VP = window.VP || {};
       render();
     });
 
+    /* Cluster legend format */
+    const clFont = $('#selClFont');
+    clFont.appendChild(el('option', { value: '', text: 'Same as figure' }));
+    VP.plot.PUB_FONTS.forEach((f) => {
+      clFont.appendChild(el('option', { value: f, text: f.split(',')[0].replace(/"/g, '') }));
+    });
+    const CL = () => state.config.clusterLegend;
+    $('#selClPos').addEventListener('change', () => {
+      const v = $('#selClPos').value;
+      CL().show = v !== 'none';
+      if (v !== 'none') CL().position = v;
+      if (v === 'floating') {
+        CL().float = null;
+        setStatus('Drag the cluster legend to place it');
+      }
+      render();
+    });
+    clFont.addEventListener('change', () => { CL().family = clFont.value; render(); });
+    const clNum = (id, key, lo, hi) => $('#' + id).addEventListener('input', () => {
+      const v = parseFloat($('#' + id).value);
+      if (isFinite(v)) { CL()[key] = clamp(v, lo, hi); render(); }
+    });
+    clNum('inpClSize', 'size', 4, 40);
+    clNum('inpClTitleSize', 'titleSize', 4, 40);
+    clNum('inpClCols', 'columns', 1, 6);
+    clNum('inpClW', 'width', 0, 2000);
+    clNum('inpClH', 'height', 0, 2000);
+    $('#inpClTitle').addEventListener('input', () => { CL().title = $('#inpClTitle').value; render(); });
+    ['chkClUp:up', 'chkClDown:down', 'chkClTotal:total'].forEach((pair) => {
+      const [id, key] = pair.split(':');
+      $('#' + id).addEventListener('change', (e) => { CL().counts[key] = e.target.checked; render(); });
+    });
+
     $('#btnAddCustomCluster').addEventListener('click', () => {
       const name = $('#inpCustomName').value.trim() || 'Custom set';
       const terms = parseTerms($('#inpCustomGenes').value).map((t) => t.toUpperCase());
@@ -2131,8 +2307,6 @@ window.VP = window.VP || {};
     $('#btnCsvSig').addEventListener('click', () => exportCsv(true));
     $('#btnCsvEnrich').addEventListener('click', exportEnrichCsv);
     $('#btnSaveSession').addEventListener('click', saveSession);
-    $('#btnLoadSession').addEventListener('click', () => $('#sessionInput').click());
-    $('#btnLoadPng').addEventListener('click', () => $('#pngInput').click());
     $('#btnPresetPng').addEventListener('click', () => $('#pngInput').click());
     $('#btnPresetJson').addEventListener('click', () => $('#sessionInput').click());
     $('#pngInput').addEventListener('change', (e) => {
@@ -2161,6 +2335,13 @@ window.VP = window.VP || {};
     });
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { $('#helpModal').hidden = true; hideTooltip(); }
+      // Undo/redo applies to labelling; ignore it while typing in a field.
+      const t = e.target;
+      const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redoLabels(); else undoLabels();
+      }
     });
   }
 
@@ -2225,6 +2406,7 @@ window.VP = window.VP || {};
   function boot() {
     bind();
     bindNetwork();
+    updateHistoryUI();
     enhanceColorInputs();
     syncControlsFromState();
     setMode('pan');

@@ -67,6 +67,24 @@ window.VP = window.VP || {};
 
       legend: { show: true, position: 'outside-right', showCounts: true, size: 12, float: null },
 
+      /* The cluster overlay gets its own legend, formatted independently of the
+         up/down/n.s. key - they answer different questions and usually want
+         different placement. */
+      clusterLegend: {
+        show: true,
+        position: 'right',          // right|left|top|bottom = own panel, no overlap
+                                    // inset-* = box on the plot; floating = dragged
+        title: '',
+        family: '',                 // blank = follow the figure font
+        size: 11,
+        titleSize: 12,
+        columns: 1,
+        width: 0,                   // 0 = size to content
+        height: 0,
+        counts: { up: true, down: false, total: true },
+        float: null,
+      },
+
       label: {
         halo: true,
         haloColor: '#ffffff',
@@ -121,24 +139,37 @@ window.VP = window.VP || {};
     const hasTitle = !!(cfg.title && cfg.title.trim());
     const marginLeft = Math.ceil(maxYLabel + 10 + (cfg.yLabel ? cfg.font.axisTitleSize + 8 : 0) + 6);
     const marginBottom = Math.ceil(cfg.font.tickSize + 12 + (cfg.xLabel ? cfg.font.axisTitleSize + 8 : 0));
-    const marginTop = Math.ceil(hasTitle ? cfg.font.titleSize + 18 : 14);
+    let marginTop = Math.ceil(hasTitle ? cfg.font.titleSize + 18 : 14);
     let marginRight = 18;
+    let marginBottomExtra = 0;
+    let marginLeftExtra = 0;
+
+    // Reserve space for any legend that is not allowed to sit on the data.
+    const reserve = { rightMain: 0 };
     if (cfg.legend.show && cfg.legend.position === 'outside-right') {
       const ls = legendSize(state);
-      if (ls) marginRight = Math.ceil(ls.boxW + 26);
+      if (ls) { reserve.rightMain = Math.ceil(ls.boxW + 14); marginRight = Math.ceil(ls.boxW + 26); }
+    }
+    const cls = clusterLegendSize(state);
+    if (cls) {
+      const pos = cfg.clusterLegend.position;
+      if (pos === 'right') marginRight = Math.ceil(reserve.rightMain + cls.boxW + 26);
+      else if (pos === 'left') marginLeftExtra = Math.ceil(cls.boxW + 14);
+      else if (pos === 'top') marginTop = Math.ceil(marginTop + cls.boxH + 10);
+      else if (pos === 'bottom') marginBottomExtra = Math.ceil(cls.boxH + 10);
     }
 
-    const plotX = marginLeft;
+    const plotX = marginLeft + marginLeftExtra;
     const plotY = marginTop;
-    const plotW = Math.max(40, cfg.width - marginLeft - marginRight);
-    const plotH = Math.max(40, cfg.height - marginTop - marginBottom);
+    const plotW = Math.max(40, cfg.width - plotX - marginRight);
+    const plotH = Math.max(40, cfg.height - marginTop - marginBottom - marginBottomExtra);
 
     const sx = (v) => plotX + ((v - dom.x0) / (dom.x1 - dom.x0)) * plotW;
     const sy = (v) => plotY + plotH - ((v - dom.y0) / (dom.y1 - dom.y0)) * plotH;
     const ix = (px) => dom.x0 + ((px - plotX) / plotW) * (dom.x1 - dom.x0);
     const iy = (py) => dom.y0 + ((plotY + plotH - py) / plotH) * (dom.y1 - dom.y0);
 
-    return { dom, plotX, plotY, plotW, plotH, sx, sy, ix, iy, xT, yT };
+    return { dom, plotX, plotY, plotW, plotH, sx, sy, ix, iy, xT, yT, reserve, marginLeftExtra };
   }
 
   /* --- point styling ------------------------------------------------------ */
@@ -219,10 +250,11 @@ window.VP = window.VP || {};
 
     // The legend is opaque: it is both an occupied box and a hard no-go area.
     const reserved = [];
-    const lg = legendLayout(state, geom);
-    if (lg && lg.overlapsPlot) {
-      reserved.push({ x0: lg.bx - 3, y0: lg.by - 3, x1: lg.bx + lg.boxW + 3, y1: lg.by + lg.boxH + 3 });
-      placed.push(reserved[0]);
+    for (const lg of [legendLayout(state, geom), clusterLegendLayout(state, geom)]) {
+      if (!lg || !lg.overlapsPlot) continue;
+      const box = { x0: lg.bx - 3, y0: lg.by - 3, x1: lg.bx + lg.boxW + 3, y1: lg.by + lg.boxH + 3 };
+      reserved.push(box);
+      placed.push(box);
     }
 
     const items = [];
@@ -463,7 +495,7 @@ window.VP = window.VP || {};
       });
     }
     if (cfg.yLabel) {
-      surface.text(12, plotY + plotH / 2, cfg.yLabel, {
+      surface.text((geom.marginLeftExtra || 0) + 12, plotY + plotH / 2, cfg.yLabel, {
         family: cfg.font.family, size: cfg.font.axisTitleSize, fill: cfg.colors.text,
         anchor: 'middle', baseline: 'top', rotate: -90,
       });
@@ -476,10 +508,15 @@ window.VP = window.VP || {};
     }
     surface.endGroup();
 
-    /* legend --------------------------------------------------------------- */
+    /* legends -------------------------------------------------------------- */
     if (cfg.legend.show) drawLegend(surface, state, geom);
+    drawClusterLegend(surface, state, geom);
 
     return geom;
+  }
+
+  function visibleClusters(state) {
+    return state.clusters.filter((c) => c.visible && c.matched);
   }
 
   function legendEntries(state) {
@@ -490,11 +527,115 @@ window.VP = window.VP || {};
       { label: 'Down', color: cfg.colors.down, shape: 'circle', n: c.down },
       { label: 'Not significant', color: cfg.colors.ns, shape: 'circle', n: c.ns },
     ];
-    for (const cl of state.clusters) {
-      if (!cl.visible || !cl.matched) continue;
-      out.push({ label: cl.name, color: cl.color, shape: cl.shape, n: cl.matched });
+    // Only fold clusters in here when they have no legend of their own.
+    if (!cfg.clusterLegend.show) {
+      for (const cl of visibleClusters(state)) {
+        out.push({ label: cl.name, color: cl.color, shape: cl.shape, n: cl.matched });
+      }
     }
     return out;
+  }
+
+  /* Per-cluster counts, written as the user asked for them. */
+  function clusterCountText(cl, cfg) {
+    const c = cfg.clusterLegend.counts;
+    const bits = [];
+    if (c.up) bits.push('\u2191' + (cl.up || 0));
+    if (c.down) bits.push('\u2193' + (cl.down || 0));
+    if (c.total) bits.push('n=' + (cl.matched || 0));
+    return bits.join(' ');
+  }
+
+  /**
+   * Cluster legend geometry. Like legendSize() this depends only on content, so
+   * the figure can reserve margin for it before the plot rectangle exists.
+   */
+  function clusterLegendSize(state) {
+    const cfg = state.config;
+    const cl = cfg.clusterLegend;
+    if (!cl.show) return null;
+    const clusters = visibleClusters(state);
+    if (!clusters.length) return null;
+
+    const family = cl.family || cfg.font.family;
+    const font = { family, size: cl.size };
+    const cols = Math.max(1, Math.min(6, cl.columns | 0 || 1));
+    const rowH = cl.size + 7;
+    const padBox = 9;
+    const swatch = Math.max(4, cfg.point.size * 1.3);
+    const gapCol = 16;
+
+    const entries = clusters.map((c) => ({
+      label: c.name,
+      count: clusterCountText(c, cfg),
+      color: c.color,
+      shape: c.shape,
+    }));
+
+    // Columns are equal width, set by the widest entry.
+    let cellW = 0;
+    for (const e of entries) {
+      const w = measureText(e.label, font) + (e.count ? measureText('  ' + e.count, font) : 0);
+      cellW = Math.max(cellW, w);
+    }
+    cellW += swatch * 2 + 8;
+
+    const rows = Math.ceil(entries.length / cols);
+    const titleH = cl.title ? cl.titleSize + 6 : 0;
+    const autoW = cols * cellW + (cols - 1) * gapCol + padBox * 2;
+    const autoH = rows * rowH + padBox * 2 - 3 + titleH;
+
+    return {
+      entries, family, size: cl.size, cols, rowH, padBox, swatch, gapCol, titleH,
+      cellW: cl.width > 0 ? Math.max(20, (cl.width - padBox * 2 - (cols - 1) * gapCol) / cols) : cellW,
+      boxW: cl.width > 0 ? cl.width : autoW,
+      boxH: cl.height > 0 ? cl.height : autoH,
+      isCluster: true,
+    };
+  }
+
+  function clusterLegendLayout(state, geom) {
+    const L = clusterLegendSize(state);
+    if (!L) return null;
+    const cl = state.config.clusterLegend;
+    const inset = 10;
+    const gap = 14;
+    let bx, by;
+
+    switch (cl.position) {
+      case 'right':
+        bx = geom.plotX + geom.plotW + gap + (geom.reserve.rightMain || 0);
+        by = geom.plotY;
+        break;
+      case 'left':
+        bx = 6;
+        by = geom.plotY;
+        break;
+      case 'top':
+        bx = geom.plotX;
+        by = 6;
+        break;
+      case 'bottom':
+        bx = geom.plotX;
+        by = state.config.height - L.boxH - 4;
+        break;
+      case 'floating': {
+        const f = cl.float;
+        bx = f ? f.x : geom.plotX + geom.plotW - L.boxW - inset;
+        by = f ? f.y : geom.plotY + inset;
+        break;
+      }
+      case 'inset-top-left': bx = geom.plotX + inset; by = geom.plotY + inset; break;
+      case 'inset-bottom-right': bx = geom.plotX + geom.plotW - L.boxW - inset; by = geom.plotY + geom.plotH - L.boxH - inset; break;
+      case 'inset-bottom-left': bx = geom.plotX + inset; by = geom.plotY + geom.plotH - L.boxH - inset; break;
+      default: // inset-top-right
+        bx = geom.plotX + geom.plotW - L.boxW - inset;
+        by = geom.plotY + inset;
+    }
+    L.bx = clamp(bx, 2, Math.max(2, state.config.width - L.boxW - 2));
+    L.by = clamp(by, 2, Math.max(2, state.config.height - L.boxH - 2));
+    L.overlapsPlot = cl.position.indexOf('inset') === 0 || cl.position === 'floating';
+    return L;
   }
 
   /* Legend size depends only on its contents, so it can be measured before the
@@ -591,6 +732,52 @@ window.VP = window.VP || {};
     surface.endGroup();
   }
 
+  function drawClusterLegend(surface, state, geom) {
+    const cfg = state.config;
+    const L = clusterLegendLayout(state, geom);
+    if (!L) return;
+    const { entries, family, size, cols, rowH, padBox, swatch, gapCol, cellW, boxW, boxH, bx, by, titleH } = L;
+
+    surface.group('cluster-legend');
+    surface.rect(bx, by, boxW, boxH, {
+      fill: cfg.colors.background, fillOpacity: 1,
+      stroke: cfg.colors.grid, strokeWidth: 1,
+    });
+    if (state.clusterLegendHover) {
+      surface.rect(bx - 3, by - 3, boxW + 6, boxH + 6, {
+        stroke: '#e8a33c', strokeWidth: 1.2, dash: [4, 3],
+      });
+    }
+    if (cfg.clusterLegend.title) {
+      surface.text(bx + padBox, by + padBox + cfg.clusterLegend.titleSize * 0.5, cfg.clusterLegend.title, {
+        family, size: cfg.clusterLegend.titleSize, weight: '600',
+        fill: cfg.colors.text, baseline: 'middle',
+      });
+    }
+
+    entries.forEach((e, i) => {
+      const col = Math.floor(i / Math.ceil(entries.length / cols));
+      const row = i % Math.ceil(entries.length / cols);
+      const cx = bx + padBox + col * (cellW + gapCol);
+      const cy = by + padBox + titleH + row * rowH + size * 0.45;
+
+      surface.markers([{ x: cx + swatch, y: cy, r: swatch }], {
+        shape: e.shape, fill: e.color, fillOpacity: 0.95,
+      });
+      const tx = cx + swatch * 2 + 8;
+      surface.text(tx, cy, e.label, {
+        family, size, fill: cfg.colors.text, baseline: 'middle',
+      });
+      if (e.count) {
+        // Counts are right-aligned in the cell so columns line up.
+        surface.text(cx + cellW, cy, e.count, {
+          family, size, fill: cfg.colors.text, anchor: 'end', baseline: 'middle', opacity: 0.75,
+        });
+      }
+    });
+    surface.endGroup();
+  }
+
   /* --- hit testing -------------------------------------------------------- */
 
   /* A uniform grid over screen space. Rebuilt per render; queried on every
@@ -657,5 +844,6 @@ window.VP = window.VP || {};
   VP.plot = {
     defaultConfig, computeGeometry, autoDomain, draw, layoutLabels,
     buildIndex, hitTest, pointsInRect, styleFor, PUB_FONTS, legendEntries, legendLayout, legendSize,
+    clusterLegendLayout, clusterLegendSize, visibleClusters,
   };
 })(window.VP);

@@ -264,7 +264,12 @@
       </div>
       <div class="row">
         <button class="btn small" id="btnApplyList" type="button">Annotate</button>
-        <button class="btn small ghost" id="btnClearList" type="button">Clear</button>
+        <button class="btn small ghost" id="btnClearList" type="button">Clear list</button>
+      </div>
+      <div class="row">
+        <button class="btn small ghost" id="btnUndoLabels" type="button" disabled title="Undo the last labelling change (Ctrl/Cmd+Z)">↶ Undo</button>
+        <button class="btn small ghost" id="btnRedoLabels" type="button" disabled title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+        <button class="btn small ghost danger" id="btnClearAllLabels" type="button">Remove all labels</button>
       </div>
 
       <div class="match-report" id="matchReport" hidden></div>
@@ -350,6 +355,43 @@
       </div>
       <p class="hint">Tick two or more clusters and press <b>Group</b> to merge them into one entry sharing a single colour, shape and legend label.</p>
       <div class="clusterlist" id="clusterList"><p class="empty">No clusters yet.</p></div>
+
+      <h3 class="sub">Cluster legend</h3>
+      <div class="field">
+        <label for="selClPos">Placement</label>
+        <select id="selClPos">
+          <optgroup label="Own panel — never overlaps the plot">
+            <option value="right">Panel — right of plot</option>
+            <option value="left">Panel — left of plot</option>
+            <option value="top">Panel — above plot</option>
+            <option value="bottom">Panel — below plot</option>
+          </optgroup>
+          <optgroup label="Inset box on the plot">
+            <option value="inset-top-right">Inset — top right</option>
+            <option value="inset-top-left">Inset — top left</option>
+            <option value="inset-bottom-right">Inset — bottom right</option>
+            <option value="inset-bottom-left">Inset — bottom left</option>
+            <option value="floating">Inset — drag to place</option>
+          </optgroup>
+          <option value="none">Hidden (fold into the main legend)</option>
+        </select>
+      </div>
+      <div class="field"><label for="inpClTitle">Legend title</label><input type="text" id="inpClTitle" placeholder="(none)"></div>
+      <div class="grid2">
+        <div class="field"><label for="selClFont">Font</label><select id="selClFont"></select></div>
+        <div class="field"><label for="inpClSize">Label size</label><input type="number" id="inpClSize" class="mono" min="4" max="40" step="0.5" value="11"></div>
+        <div class="field"><label for="inpClCols">Columns</label><input type="number" id="inpClCols" class="mono" min="1" max="6" step="1" value="1"></div>
+        <div class="field"><label for="inpClTitleSize">Title size</label><input type="number" id="inpClTitleSize" class="mono" min="4" max="40" step="0.5" value="12"></div>
+        <div class="field"><label for="inpClW">Box width (0 = auto)</label><input type="number" id="inpClW" class="mono" min="0" max="2000" step="5" value="0"></div>
+        <div class="field"><label for="inpClH">Box height (0 = auto)</label><input type="number" id="inpClH" class="mono" min="0" max="2000" step="5" value="0"></div>
+      </div>
+      <label>Counts shown per cluster</label>
+      <div class="row wrap">
+        <label class="check"><input type="checkbox" id="chkClUp" checked> ↑ up-regulated</label>
+        <label class="check"><input type="checkbox" id="chkClDown"> ↓ down-regulated</label>
+        <label class="check"><input type="checkbox" id="chkClTotal" checked> n = whole dataset</label>
+      </div>
+      <p class="hint">Counts are hits of that cluster among the significant up set, the significant down set, and all proteins in the file.</p>
 
       <h3 class="sub">Dot outlines</h3>
       <div class="row tight">
@@ -455,14 +497,12 @@
       <button class="btn ghost block" id="btnCsvSig" type="button">Significant proteins only (CSV)</button>
       <button class="btn ghost block" id="btnCsvEnrich" type="button">Enrichment results (CSV)</button>
 
-      <h3 class="sub">Session</h3>
-      <button class="btn ghost block" id="btnSaveSession" type="button">Save settings (JSON)</button>
-      <button class="btn ghost block" id="btnLoadSession" type="button">Restore settings…</button>
-      <button class="btn ghost block" id="btnLoadPng" type="button">Restore format from a PNG…</button>
+      <h3 class="sub">Format</h3>
+      <button class="btn ghost block" id="btnSaveSession" type="button">Save format (JSON)</button>
       <input type="file" id="sessionInput" accept=".json" hidden>
       <input type="file" id="pngInput" accept="image/png,.png" hidden>
-      <p class="hint">Every PNG this site exports carries its own settings inside the image file. Drop one back in — or hand it to a colleague — to recover the exact look, no separate settings file needed.</p>
-      <p class="hint">Settings cover cutoffs, styling, labels and clusters — not the data itself, so you can reuse one look across experiments.</p>
+      <p class="hint">Format covers cutoffs, centring, styling, labels, clusters and legends — not the data — so one look can be reused across experiments. Every PNG exported above already carries this same format inside the image file.</p>
+      <p class="hint">To apply a saved format, use <b>Preset format</b> in panel 01.</p>
       <button class="btn ghost block danger" id="btnClearCache" type="button">Clear cached annotations</button>
     </section>
   </aside>

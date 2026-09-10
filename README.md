@@ -107,6 +107,9 @@ unnoticed. You can also:
 - **Drag** a label to place it; double-click to snap it back.
 - **Box-label** a whole region (shift-drag, or the *Box label* tool).
 - **Auto-label** the top *N* proteins by significance.
+- **Remove all labels** in one click, with **undo/redo** (buttons, or
+  Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z) across every labelling action — pinning,
+  box-select, pasted lists, auto-labels and hand-placed label positions.
 
 Labels avoid each other and the legend, with leader lines when they sit away
 from their point.
@@ -164,6 +167,15 @@ one** takes every hit a search returned in a single click.
 from either the GO panel or the Style panel — the two controls drive the same
 setting.
 
+**Cluster legend.** Clusters get their own legend, formatted independently of
+the up/down/n.s. key. Place it as its **own panel** to the right, left, above or
+below the plot — the figure reserves margin so it can never overlap the data —
+or as an **inset box** in any corner, or dragged freely. Its font, label size,
+title, column count and box dimensions are all set separately, and each row can
+report the cluster's hits among the **significant up** set, the **significant
+down** set, and the **whole dataset** (`↑93 ↓1 n=144`). Those tallies follow
+your cutoffs live.
+
 ### 7. Pathway analysis
 
 Over-representation analysis on your up, down, all-significant, labelled or
@@ -213,8 +225,9 @@ chance to detect most of them.
   group in Illustrator, Inkscape or Affinity.
 - **CSV** — all proteins with classification, significant only, or the
   enrichment table.
-- **Settings JSON** — cutoffs, styling, labels and clusters, so one look can be
-  reused across experiments.
+- **Format JSON** — cutoffs, centring, styling, labels, clusters and legends, so
+  one look can be reused across experiments. Apply a saved format (or a PNG's)
+  from **Preset format** in the Data panel.
 - **Settings inside the PNG.** Every exported PNG carries its own settings in an
   iTXt chunk. Drop that PNG back onto the app — or hand it to a colleague — and
   the entire format is restored: cutoffs, centring, fonts, colours, labels,
