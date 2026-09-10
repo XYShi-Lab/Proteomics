@@ -1663,23 +1663,26 @@ kbd {
         <div class="field"><label for="selAxisStyle">Axis style</label>
           <select id="selAxisStyle"><option value="lines">L-shaped</option><option value="box">Full box</option><option value="none">None</option></select>
         </div>
-        <div class="field"><label for="selLegendPos">Legend</label>
-          <select id="selLegendPos">
-            <option value="top-right">Inside — top right</option>
-            <option value="top-left">Inside — top left</option>
-            <option value="bottom-right">Inside — bottom right</option>
-            <option value="bottom-left">Inside — bottom left</option>
-            <option value="outside-right">Right of plot</option>
-            <option value="floating">Floating — drag to place</option>
-            <option value="none">Hidden</option>
-          </select>
+        <div class="field"><label for="inpLegendSize">Up/down legend size</label>
+          <input type="number" id="inpLegendSize" class="mono" min="4" max="40" step="0.5" value="12">
         </div>
+      </div>
+      <div class="field"><label for="selLegendPos">Up/down legend</label>
+        <select id="selLegendPos">
+          <option value="top-right">Inside — top right</option>
+          <option value="top-left">Inside — top left</option>
+          <option value="bottom-right">Inside — bottom right</option>
+          <option value="bottom-left">Inside — bottom left</option>
+          <option value="outside-right">Right of plot</option>
+          <option value="floating">Floating — drag to place</option>
+          <option value="none">Hidden</option>
+        </select>
       </div>
       <div class="row wrap">
         <label class="check"><input type="checkbox" id="chkGrid" checked> grid</label>
         <label class="check"><input type="checkbox" id="chkThresholds" checked> cutoff lines</label>
         <label class="check"><input type="checkbox" id="chkSymmetric" checked> symmetric x-axis</label>
-        <label class="check"><input type="checkbox" id="chkLegendCounts" checked> counts in legend</label>
+        <label class="check"><input type="checkbox" id="chkLegendCounts" checked> counts in up/down legend</label>
       </div>
     </section>
 
@@ -7648,6 +7651,7 @@ window.VP = window.VP || {};
     $('#inpHeight').value = cfg.height;
     $('#selAxisStyle').value = cfg.axisStyle;
     $('#selLegendPos').value = cfg.legend.show ? cfg.legend.position : 'none';
+    $('#inpLegendSize').value = cfg.legend.size;
     $('#chkGrid').checked = cfg.showGrid;
     $('#chkThresholds').checked = cfg.showThresholds;
     $('#chkSymmetric').checked = cfg.symmetricX;
@@ -7871,6 +7875,7 @@ window.VP = window.VP || {};
       $('#inpLabelSize2').value = v;
     });
     numBind('inpTitleSize', (v) => { state.config.font.titleSize = v; });
+    numBind('inpLegendSize', (v) => { state.config.legend.size = clamp(v, 4, 40); });
     numBind('inpWidth', (v) => { state.config.width = clamp(v, 200, 4000); updatePngHint(); });
     numBind('inpHeight', (v) => { state.config.height = clamp(v, 200, 4000); updatePngHint(); });
 

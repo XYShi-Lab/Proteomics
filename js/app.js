@@ -1916,6 +1916,7 @@ window.VP = window.VP || {};
     $('#inpHeight').value = cfg.height;
     $('#selAxisStyle').value = cfg.axisStyle;
     $('#selLegendPos').value = cfg.legend.show ? cfg.legend.position : 'none';
+    $('#inpLegendSize').value = cfg.legend.size;
     $('#chkGrid').checked = cfg.showGrid;
     $('#chkThresholds').checked = cfg.showThresholds;
     $('#chkSymmetric').checked = cfg.symmetricX;
@@ -2139,6 +2140,7 @@ window.VP = window.VP || {};
       $('#inpLabelSize2').value = v;
     });
     numBind('inpTitleSize', (v) => { state.config.font.titleSize = v; });
+    numBind('inpLegendSize', (v) => { state.config.legend.size = clamp(v, 4, 40); });
     numBind('inpWidth', (v) => { state.config.width = clamp(v, 200, 4000); updatePngHint(); });
     numBind('inpHeight', (v) => { state.config.height = clamp(v, 200, 4000); updatePngHint(); });
 
