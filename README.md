@@ -230,6 +230,9 @@ Jaccard overlap of the two gene sets, with an adjustable threshold. Scroll to
 zoom, drag to pan, double-click a node to zoom into it, double-click the
 background to fit, and export the network as its own PNG.
 
+Each row lists the genes driving that term. **Show genes** turns the lists off
+for a compact table, and a truncated list expands to the full set on click.
+
 **Click any row's *annotate* button, or any node in the network, to paint that
 term's genes straight onto the volcano plot.** The network is computed locally
 from gene lists the enrichment already returned, so it needs no extra service

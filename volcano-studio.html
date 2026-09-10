@@ -568,8 +568,15 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: inset 0 0 24px rgba(232,163,60,.08);
 }
 .dz-lead { margin: 0 0 3px; font-size: 13px; color: var(--fg); }
-.dz-sub {
+.dz-alt {
   margin: 0 0 12px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--fg-mute);
+}
+.dz-alt b { color: var(--fg-dim); font-weight: 500; }
+.dz-sub {
+  margin: 0 0 6px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-mute);
@@ -1153,6 +1160,11 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
   word-break: break-word;
 }
+.dtable .genes.clickable { cursor: pointer; }
+.dtable .genes.clickable:hover { color: #46473f; text-decoration: underline dotted; }
+
+/* Checkboxes inside the white results drawer need light-surface ink. */
+.check.light { color: #55564f; }
 .mini {
   appearance: none;
   background: #ffffff;
@@ -1452,12 +1464,14 @@ kbd {
 
     <!-- ---------------- 01 DATA ---------------- -->
     <section class="panel is-active" data-panel="data">
-      <h2 class="panel-title">Data<em>load a results table</em></h2>
+      <h2 class="panel-title">Data<em>load omics data</em></h2>
 
+      <h3 class="sub">Input</h3>
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.tab,.xlsx,.xlsm,.text,.png,.json" hidden>
-        <p class="dz-lead">Drop a results table here</p>
+        <p class="dz-lead">Drop omics data here</p>
         <p class="dz-sub">.xlsx · .csv · .tsv · .txt</p>
+        <p class="dz-alt">or drop a <b>.png</b> / <b>.json</b> to preset the format</p>
         <button class="btn small" id="btnBrowse" type="button">Choose file</button>
       </div>
 
@@ -1472,9 +1486,12 @@ kbd {
       <button class="btn ghost block" id="btnPresetJson" type="button">Load JSON to preset format</button>
       <p class="hint">Reuse the look of an earlier figure: pick a format <code>.json</code>, or any PNG this site exported, and its cutoffs, centring, styling, labels, clusters and legends are applied to the data you load.</p>
 
-      <div class="field" id="sheetField" hidden>
-        <label for="selSheet">Worksheet</label>
-        <select id="selSheet"></select>
+      <div id="sheetSection" hidden>
+        <h3 class="sub">Select worksheet</h3>
+        <div class="field">
+          <label for="selSheet">Worksheet</label>
+          <select id="selSheet"></select>
+        </div>
       </div>
 
       <div class="field" id="comparisonField" hidden>
@@ -1484,7 +1501,7 @@ kbd {
       </div>
 
       <div id="mappingBlock" hidden>
-        <h3 class="sub">Column mapping</h3>
+        <h3 class="sub">Select columns</h3>
         <p class="hint" id="mapGuess"></p>
         <div class="grid2">
           <div class="field"><label for="colId">Protein ID</label><select id="colId"></select></div>
@@ -1589,6 +1606,22 @@ kbd {
         <label class="check"><input type="checkbox" id="chkLabelItalic"> italic labels</label>
       </div>
 
+      <h3 class="sub">Axes &amp; grid</h3>
+      <div class="grid2">
+        <div class="field"><label for="inpXMin">x min</label><input type="number" id="inpXMin" class="mono" step="0.1" placeholder="auto"></div>
+        <div class="field"><label for="inpXMax">x max</label><input type="number" id="inpXMax" class="mono" step="0.1" placeholder="auto"></div>
+        <div class="field"><label for="inpYMin">y min</label><input type="number" id="inpYMin" class="mono" step="0.1" placeholder="auto"></div>
+        <div class="field"><label for="inpYMax">y max</label><input type="number" id="inpYMax" class="mono" step="0.1" placeholder="auto"></div>
+        <div class="field"><label for="inpXStep">x tick interval</label><input type="number" id="inpXStep" class="mono" min="0" step="0.1" value="0" placeholder="auto"></div>
+        <div class="field"><label for="inpYStep">y tick interval</label><input type="number" id="inpYStep" class="mono" min="0" step="0.1" value="0" placeholder="auto"></div>
+      </div>
+      <div class="row">
+        <button class="btn small ghost" id="btnSquareGrid" type="button">Lock square grid</button>
+        <button class="btn small ghost" id="btnAxesAuto" type="button">Auto</button>
+        <button class="btn small ghost" id="btnAxesUndo" type="button" disabled>Undo auto</button>
+      </div>
+      <p class="hint" id="squareHint">Leave a box empty or at 0 for automatic. <b>Lock square grid</b> keeps one x interval the same size on the page as one y interval, whatever the figure dimensions — the plot letterboxes inside the frame to hold the ratio.</p>
+
       <h3 class="sub">Data points</h3>
       <div class="field slider-field">
         <label for="rngSize">Point size <output id="outSize" class="mono">3.2</output></label>
@@ -1617,22 +1650,6 @@ kbd {
         <button class="btn small ghost" id="btnPalColorblind" type="button">Colour-blind safe</button>
         <button class="btn small ghost" id="btnPalMono" type="button">Greyscale</button>
       </div>
-
-      <h3 class="sub">Axes &amp; grid</h3>
-      <div class="grid2">
-        <div class="field"><label for="inpXMin">x min</label><input type="number" id="inpXMin" class="mono" step="0.1" placeholder="auto"></div>
-        <div class="field"><label for="inpXMax">x max</label><input type="number" id="inpXMax" class="mono" step="0.1" placeholder="auto"></div>
-        <div class="field"><label for="inpYMin">y min</label><input type="number" id="inpYMin" class="mono" step="0.1" placeholder="auto"></div>
-        <div class="field"><label for="inpYMax">y max</label><input type="number" id="inpYMax" class="mono" step="0.1" placeholder="auto"></div>
-        <div class="field"><label for="inpXStep">x tick interval</label><input type="number" id="inpXStep" class="mono" min="0" step="0.1" value="0" placeholder="auto"></div>
-        <div class="field"><label for="inpYStep">y tick interval</label><input type="number" id="inpYStep" class="mono" min="0" step="0.1" value="0" placeholder="auto"></div>
-      </div>
-      <div class="row">
-        <button class="btn small ghost" id="btnSquareGrid" type="button">Lock square grid</button>
-        <button class="btn small ghost" id="btnAxesAuto" type="button">Auto</button>
-        <button class="btn small ghost" id="btnAxesUndo" type="button" disabled>Undo auto</button>
-      </div>
-      <p class="hint" id="squareHint">Leave a box empty or at 0 for automatic. <b>Lock square grid</b> keeps one x interval the same size on the page as one y interval, whatever the figure dimensions — the plot letterboxes inside the frame to hold the ratio.</p>
 
       <h3 class="sub">Frame &amp; text</h3>
       <div class="field"><label for="inpTitle">Plot title</label><input type="text" id="inpTitle" placeholder="(none)"></div>
@@ -1670,8 +1687,9 @@ kbd {
     <section class="panel" data-panel="proteins">
       <h2 class="panel-title">Label<em>annotate proteins of interest</em></h2>
 
+      <h3 class="sub">Manual labeling</h3>
       <div class="field">
-        <label for="proteinList">Protein list</label>
+        <label for="proteinList">Type protein list</label>
         <textarea id="proteinList" class="mono" rows="8" placeholder="TOMM22&#10;MICOS10&#10;Q92506&#10;HSD17B8, IL6; CNTROB"></textarea>
         <p class="hint">Gene symbols or UniProt accessions — one per line, or separated by commas, semicolons or spaces. Isoform suffixes (P12345-2) and protein groups are matched automatically.</p>
       </div>
@@ -1968,6 +1986,7 @@ kbd {
         <div class="drawer-pane">
         <div class="table-tools">
           <input type="search" id="enrichFilter" placeholder="Filter terms…">
+          <label class="check light"><input type="checkbox" id="chkShowGenes" checked> show genes</label>
           <span class="hint" id="enrichProvider"></span>
         </div>
         <div class="table-scroll">
@@ -5833,7 +5852,7 @@ window.VP = window.VP || {};
     lookup: null,
     organism: 'hsapiens',
     mode: 'pan',
-    enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set() },
+    enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set(), showGenes: true, expanded: new Set() },
     net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25, topN: 6, colorMap: new Map() },
     axisUndo: null,
     legendHover: false,
@@ -6988,8 +7007,8 @@ window.VP = window.VP || {};
           }),
           el('div', {}, [
             el('span', { text: r.name || r.id }),
-            r.genes && r.genes.length
-              ? el('span', { class: 'genes', text: r.genes.slice(0, 24).join(' ') + (r.genes.length > 24 ? ' …+' + (r.genes.length - 24) : '') })
+            state.enrich.showGenes && r.genes && r.genes.length
+              ? geneList(r)
               : null,
           ]),
         ]),
@@ -7010,6 +7029,29 @@ window.VP = window.VP || {};
       body.appendChild(el('tr', {}, el('td', { colspan: '7' },
         el('p', { class: 'empty', text: 'No results. Run an analysis from the Pathways panel.' }))));
     }
+  }
+
+  /* The gene list under a term: truncated by default, click to see them all. */
+  function geneList(r) {
+    const all = r.genes;
+    const open = state.enrich.expanded.has(r.id);
+    const LIMIT = 24;
+    const shown = open ? all : all.slice(0, LIMIT);
+    const more = all.length - shown.length;
+    const node = el('span', {
+      class: 'genes' + (all.length > LIMIT ? ' clickable' : ''),
+      title: all.length > LIMIT ? (open ? 'Click to collapse' : 'Click to show all ' + all.length) : '',
+      text: shown.join(' ') + (more > 0 ? '  …+' + more + ' more' : (open && all.length > LIMIT ? '  (less)' : '')),
+    });
+    if (all.length > LIMIT) {
+      node.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (open) state.enrich.expanded.delete(r.id);
+        else state.enrich.expanded.add(r.id);
+        renderEnrichTable();
+      });
+    }
+    return node;
   }
 
   /* Turn one enrichment result into a plot overlay. */
@@ -8145,6 +8187,10 @@ window.VP = window.VP || {};
     });
     $('#selEnrichSet').addEventListener('change', updateEnrichHint);
     $('#btnRunEnrich').addEventListener('click', runEnrichment);
+    $('#chkShowGenes').addEventListener('change', (e) => {
+      state.enrich.showGenes = e.target.checked;
+      renderEnrichTable();
+    });
     $('#enrichFilter').addEventListener('input', debounce(() => {
       state.enrich.filter = $('#enrichFilter').value;
       renderEnrichTable();
@@ -8251,7 +8297,7 @@ window.VP = window.VP || {};
         wb.sheets.forEach((s, i) => {
           sel.appendChild(el('option', { value: String(i), text: s.name + '  (' + s.rows.length + ' rows)' }));
         });
-        $('#sheetField').hidden = wb.sheets.length < 2;
+        $('#sheetSection').hidden = wb.sheets.length < 2;
         // Default to the sheet that actually looks like a results table.
         let best = 0, bestScore = -1;
         wb.sheets.forEach((s, i) => {

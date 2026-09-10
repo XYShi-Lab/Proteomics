@@ -553,8 +553,15 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: inset 0 0 24px rgba(232,163,60,.08);
 }
 .dz-lead { margin: 0 0 3px; font-size: 13px; color: var(--fg); }
-.dz-sub {
+.dz-alt {
   margin: 0 0 12px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--fg-mute);
+}
+.dz-alt b { color: var(--fg-dim); font-weight: 500; }
+.dz-sub {
+  margin: 0 0 6px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-mute);
@@ -1138,6 +1145,11 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
   word-break: break-word;
 }
+.dtable .genes.clickable { cursor: pointer; }
+.dtable .genes.clickable:hover { color: #46473f; text-decoration: underline dotted; }
+
+/* Checkboxes inside the white results drawer need light-surface ink. */
+.check.light { color: #55564f; }
 .mini {
   appearance: none;
   background: #ffffff;

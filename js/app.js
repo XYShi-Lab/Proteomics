@@ -120,7 +120,7 @@ window.VP = window.VP || {};
     lookup: null,
     organism: 'hsapiens',
     mode: 'pan',
-    enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set() },
+    enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set(), showGenes: true, expanded: new Set() },
     net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25, topN: 6, colorMap: new Map() },
     axisUndo: null,
     legendHover: false,
@@ -1275,8 +1275,8 @@ window.VP = window.VP || {};
           }),
           el('div', {}, [
             el('span', { text: r.name || r.id }),
-            r.genes && r.genes.length
-              ? el('span', { class: 'genes', text: r.genes.slice(0, 24).join(' ') + (r.genes.length > 24 ? ' …+' + (r.genes.length - 24) : '') })
+            state.enrich.showGenes && r.genes && r.genes.length
+              ? geneList(r)
               : null,
           ]),
         ]),
@@ -1297,6 +1297,29 @@ window.VP = window.VP || {};
       body.appendChild(el('tr', {}, el('td', { colspan: '7' },
         el('p', { class: 'empty', text: 'No results. Run an analysis from the Pathways panel.' }))));
     }
+  }
+
+  /* The gene list under a term: truncated by default, click to see them all. */
+  function geneList(r) {
+    const all = r.genes;
+    const open = state.enrich.expanded.has(r.id);
+    const LIMIT = 24;
+    const shown = open ? all : all.slice(0, LIMIT);
+    const more = all.length - shown.length;
+    const node = el('span', {
+      class: 'genes' + (all.length > LIMIT ? ' clickable' : ''),
+      title: all.length > LIMIT ? (open ? 'Click to collapse' : 'Click to show all ' + all.length) : '',
+      text: shown.join(' ') + (more > 0 ? '  …+' + more + ' more' : (open && all.length > LIMIT ? '  (less)' : '')),
+    });
+    if (all.length > LIMIT) {
+      node.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (open) state.enrich.expanded.delete(r.id);
+        else state.enrich.expanded.add(r.id);
+        renderEnrichTable();
+      });
+    }
+    return node;
   }
 
   /* Turn one enrichment result into a plot overlay. */
@@ -2432,6 +2455,10 @@ window.VP = window.VP || {};
     });
     $('#selEnrichSet').addEventListener('change', updateEnrichHint);
     $('#btnRunEnrich').addEventListener('click', runEnrichment);
+    $('#chkShowGenes').addEventListener('change', (e) => {
+      state.enrich.showGenes = e.target.checked;
+      renderEnrichTable();
+    });
     $('#enrichFilter').addEventListener('input', debounce(() => {
       state.enrich.filter = $('#enrichFilter').value;
       renderEnrichTable();
@@ -2538,7 +2565,7 @@ window.VP = window.VP || {};
         wb.sheets.forEach((s, i) => {
           sel.appendChild(el('option', { value: String(i), text: s.name + '  (' + s.rows.length + ' rows)' }));
         });
-        $('#sheetField').hidden = wb.sheets.length < 2;
+        $('#sheetSection').hidden = wb.sheets.length < 2;
         // Default to the sheet that actually looks like a results table.
         let best = 0, bestScore = -1;
         wb.sheets.forEach((s, i) => {
