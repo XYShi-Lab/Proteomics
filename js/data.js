@@ -372,6 +372,64 @@ window.VP = window.VP || {};
     };
   }
 
+  /* --- centring / global-shift correction --------------------------------- */
+
+  function median(sorted) {
+    if (!sorted.length) return 0;
+    const m = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+  }
+
+  /**
+   * Quantitative proteomics assumes most proteins do not change, so the bulk of
+   * a volcano should straddle zero. When it does not, the two conditions carry
+   * a global scale difference (unequal loading, or normalisation that left an
+   * offset) and comparing every protein against zero measures that offset
+   * rather than biology.
+   */
+  function shiftDiagnostic(records) {
+    const xs = [];
+    for (const r of records) if (isFinite(r.xRaw)) xs.push(r.xRaw);
+    if (!xs.length) return { n: 0, median: 0, positiveFraction: 0, skewed: false };
+    xs.sort((a, b) => a - b);
+    let pos = 0;
+    for (const x of xs) if (x > 0) pos++;
+    const med = median(xs);
+    const frac = pos / xs.length;
+    return {
+      n: xs.length,
+      median: med,
+      positiveFraction: frac,
+      // Flag only a shift big enough to change conclusions.
+      skewed: Math.abs(med) >= 0.25 && (frac >= 0.7 || frac <= 0.3),
+    };
+  }
+
+  /** The offset to subtract from every log2 fold change. */
+  function centerOffset(records, mode) {
+    if (!mode || mode === 'none' || !records.length) return 0;
+    const xs = [];
+    for (const r of records) if (isFinite(r.xRaw)) xs.push(r.xRaw);
+    if (!xs.length) return 0;
+    xs.sort((a, b) => a - b);
+    if (mode === 'median') return median(xs);
+    if (mode === 'trimmed') {
+      // 10% trimmed mean - less swayed than the mean by a long enrichment tail.
+      const k = Math.floor(xs.length * 0.1);
+      const core = xs.slice(k, xs.length - k);
+      if (!core.length) return median(xs);
+      return core.reduce((a, b) => a + b, 0) / core.length;
+    }
+    return 0;
+  }
+
+  /** Apply (or remove) the centring offset. Returns the offset used. */
+  function applyCentering(records, mode) {
+    const offset = centerOffset(records, mode);
+    for (const r of records) r.x = r.xRaw - offset;
+    return offset;
+  }
+
   /* --- dataset building --------------------------------------------------- */
 
   const SPLIT_IDS = /[;,|]\s*/;
@@ -430,13 +488,16 @@ window.VP = window.VP || {};
         name: String(col(r, map.name) || '').trim(),
         desc: String(col(r, map.desc) || '').trim(),
         fcRaw,
+        // xRaw is the fold change as the file reports it; x is what gets
+        // plotted, which may carry a centring offset.
+        xRaw: applyFcScale(fcRaw, map.fcScale),
         x: applyFcScale(fcRaw, map.fcScale),
         p: isFinite(p) ? p : null,
         padj: isFinite(padj) ? padj : null,
         raw: r,
       };
       rec.label = rec.gene || rec.id || rec.name || ('row ' + (i + 1));
-      if (!isFinite(rec.x)) { dropped.noFc++; continue; }
+      if (!isFinite(rec.xRaw)) { dropped.noFc++; continue; }
       out.push(rec);
     }
 
@@ -477,5 +538,6 @@ window.VP = window.VP || {};
     sniffDelimiter, splitLine, parseDelimited, toTable, numify, columnStats,
     detectMapping, detectComparisons, detectFcScale, applyFcScale, buildDataset,
     classify, cleanAccession, FC_SCALE_LABEL,
+    shiftDiagnostic, centerOffset, applyCentering, median,
   };
 })(window.VP);

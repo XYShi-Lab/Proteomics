@@ -68,6 +68,18 @@ It handles the things that actually turn up in vendor reports:
 Getting this wrong silently corrupts a volcano plot, so the detected reading is
 always displayed and always overridable.
 
+**Global-shift detection.** Quantitative proteomics assumes most proteins do not
+change, so the bulk of a volcano should straddle zero. When it does not — say
+95% of proteins move the same way with a median log₂FC of +0.79 — the two
+conditions differ by a global scale factor (unequal loading, or normalisation
+that left an offset), and measuring every protein against zero measures that
+offset rather than biology. The app detects this on load, says so in plain
+language, and offers **Centring**: subtract the median (or a 10% trimmed mean)
+so enrichment is judged against the bulk of the proteome instead of against
+zero. The uncentred value stays visible in the hover card, both values are
+exported, and the x-axis label records that the figure is centred — a reader
+cannot interpret the zero otherwise.
+
 ### 2. Hover for protein identity, location and function
 
 Parking the cursor on a dot shows the gene name, every accession in the group,

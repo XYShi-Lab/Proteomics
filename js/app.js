@@ -36,6 +36,8 @@ window.VP = window.VP || {};
     records: [],
     counts: { up: 0, down: 0, ns: 0 },
     thresholds: { pCutoff: 0.05, fcCutoff: 1, useAdjusted: true },
+    centre: 'none',
+    centreOffset: 0,
     config: VP.plot.defaultConfig(),
     clusters: [],
     labelOffsets: {},
@@ -203,6 +205,7 @@ window.VP = window.VP || {};
     state.config.yLabel = yl;
     $('#inpYLabel').value = yl;
 
+    applyCentring();
     applyClusters();
     recompute();
 
@@ -214,12 +217,51 @@ window.VP = window.VP || {};
     if (ds.dropped.noP) bits.push(ds.dropped.noP + ' row(s) had no p-value');
     if (ds.dropped.pOutOfRange) bits.push(ds.dropped.pOutOfRange + ' row(s) had a p-value outside 0–1');
     if (ds.capped) bits.push(ds.capped + ' p-value(s) were exactly 0 and were floored at ' + ds.pFloor.toExponential(1));
-    notice('dataNotice',
-      '<b>' + ds.records.length.toLocaleString() + '</b> proteins plotted from <b>' +
+    const diag = VP.data.shiftDiagnostic(ds.records);
+    state.shift = diag;
+    let body = '<b>' + ds.records.length.toLocaleString() + '</b> proteins plotted from <b>' +
       U.escapeHtml(state.sourceName || 'table') + '</b>.' +
-      (bits.length ? '<br>' + bits.join('; ') + '.' : ''),
-      bits.length ? '' : 'ok');
+      (bits.length ? '<br>' + bits.join('; ') + '.' : '');
+
+    if (diag.skewed) {
+      const pct = (diag.positiveFraction * 100).toFixed(1);
+      const dir = diag.median > 0 ? 'higher' : 'lower';
+      body += '<br><br><b>Global shift detected.</b> ' + pct + '% of proteins move the same way and the ' +
+        'median log₂FC is <code>' + (diag.median > 0 ? '+' : '') + fmtNum(diag.median, 2) + '</code> (about ' +
+        fmtNum(Math.pow(2, Math.abs(diag.median)), 2) + '× ' + dir + ' overall). Most proteins are not expected to ' +
+        'change, so this usually means the two conditions differ by a global scale factor — unequal loading, or ' +
+        'normalisation that left an offset. Measured against zero, ordinary proteins will look regulated. ' +
+        'Consider <b>Centring</b> below.';
+      toast('Median log₂FC is ' + (diag.median > 0 ? '+' : '') + fmtNum(diag.median, 2) + ' and ' + pct +
+        '% of proteins move the same way. See "Global shift detected" in the Data panel.',
+        'error', 'Data looks un-normalised');
+    }
+    notice('dataNotice', body, diag.skewed ? '' : (bits.length ? '' : 'ok'));
     setStatus(ds.records.length.toLocaleString() + ' proteins · hover a point for details');
+  }
+
+  /* Re-centre the fold changes and keep the x-axis label honest: a centred
+     figure must say so, or a reader cannot interpret its zero. */
+  function applyCentring() {
+    if (!state.records.length) return;
+    state.centreOffset = VP.data.applyCentering(state.records, state.centre);
+    const base = 'log₂ fold change';
+    const want = state.centre === 'none' ? base
+      : base + (state.centre === 'median' ? ' (median-centred)' : ' (centred)');
+    // Only rewrite a label the user has not customised.
+    if (!state.config.xLabel || state.config.xLabel.indexOf(base) === 0) {
+      state.config.xLabel = want;
+      const inp = $('#inpXLabel');
+      if (inp) inp.value = want;
+    }
+    const hint = $('#centreHint');
+    if (hint) {
+      hint.innerHTML = state.centre === 'none'
+        ? 'Quantitative proteomics assumes most proteins do not change, so the bulk of a volcano should straddle zero. If it does not, the two conditions differ by a global scale factor and every protein is being measured against the wrong baseline.'
+        : 'Subtracting <code>' + (state.centreOffset > 0 ? '+' : '') + fmtNum(state.centreOffset, 3) +
+          '</code> from every log₂ fold change. Enrichment is now measured against the bulk of the proteome ' +
+          'rather than against zero. The raw value is still shown in the hover card and both are exported.';
+    }
   }
 
   /* p-value / fold-change thresholds -> classes, counts, redraw. */
@@ -445,6 +487,9 @@ window.VP = window.VP || {};
   function tooltipStats(rec) {
     const parts = [];
     parts.push('<span>log₂FC <b>' + fmtNum(rec.x, 2) + '</b></span>');
+    if (state.centre !== 'none') {
+      parts.push('<span><i>uncentred</i> <b>' + fmtNum(rec.xRaw, 2) + '</b></span>');
+    }
     if (rec.fcRaw != null && state.mapping.fcScale !== 'log2') {
       parts.push('<span><i>raw</i> <b>' + fmtNum(rec.fcRaw, 2) + '</b></span>');
     }
@@ -1071,13 +1116,14 @@ window.VP = window.VP || {};
   function exportCsv(onlySig) {
     if (!state.records.length) { toast('Load some data first.', 'error'); return; }
     const rows = [['protein_id', 'gene', 'entry_name', 'description', 'fold_change_raw',
-      'log2_fold_change', 'p_value', 'adjusted_p_value', 'neg_log10_p_used',
+      'log2_fold_change_uncentred', 'log2_fold_change_plotted', 'centring_offset',
+      'p_value', 'adjusted_p_value', 'neg_log10_p_used',
       'classification', 'labelled', 'clusters']];
     for (const r of state.records) {
       if (onlySig && r.cls === 'ns') continue;
       rows.push([
         r.ids.join(';'), r.genes.join(';'), r.name, r.desc,
-        r.fcRaw, r.x, r.p, r.padj, r.y, r.cls,
+        r.fcRaw, r.xRaw, r.x, state.centreOffset, r.p, r.padj, r.y, r.cls,
         r.labelled ? 'yes' : '', r.clusters ? r.clusters.map((c) => c.name).join(';') : '',
       ]);
     }
@@ -1101,6 +1147,7 @@ window.VP = window.VP || {};
       version: 1,
       config: state.config,
       thresholds: state.thresholds,
+      centre: state.centre,
       organism: state.organism,
       labelTextMode: state.labelTextMode,
       autoLabelN: state.autoLabelN,
@@ -1118,6 +1165,7 @@ window.VP = window.VP || {};
       const d = JSON.parse(json);
       if (d.config) Object.assign(state.config, d.config);
       if (d.thresholds) Object.assign(state.thresholds, d.thresholds);
+      if (d.centre) state.centre = d.centre;
       if (d.organism) state.organism = d.organism;
       state.labelTextMode = d.labelTextMode || 'gene';
       state.autoLabelN = d.autoLabelN || 0;
@@ -1131,6 +1179,7 @@ window.VP = window.VP || {};
         }));
       }
       syncControlsFromState();
+      applyCentring();
       applyList(false);
       applyClusters();
       recompute();
@@ -1193,6 +1242,7 @@ window.VP = window.VP || {};
     $('#outAutoLabel').textContent = String(state.autoLabelN);
     $('#selLabelText').value = state.labelTextMode;
     $('#selOrganism').value = state.organism;
+    $('#selCentre').value = state.centre;
     updatePngHint();
   }
 
@@ -1290,6 +1340,15 @@ window.VP = window.VP || {};
       rebuildDataset();
     });
     $('#colFcScale').addEventListener('change', () => { readMappingUI(); rebuildDataset(); });
+    $('#selCentre').addEventListener('change', () => {
+      state.centre = $('#selCentre').value;
+      applyCentring();
+      state.view = null;
+      recompute();
+      if (state.centre !== 'none') {
+        toast('Subtracted ' + fmtNum(state.centreOffset, 3) + ' from every log₂ fold change.', 'ok', 'Centred');
+      }
+    });
     $('#selComparison').addEventListener('change', () => {
       const c = state.mapping.comparisons[parseInt($('#selComparison').value, 10)];
       if (!c) return;

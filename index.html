@@ -104,6 +104,17 @@
         </div>
         <label class="check"><input type="checkbox" id="chkNegLog"> p column is already −log10</label>
         <button class="btn small block" id="btnApplyMapping" type="button">Apply mapping</button>
+
+        <h3 class="sub">Centring</h3>
+        <div class="field">
+          <label for="selCentre">Centre log<sub>2</sub> FC on</label>
+          <select id="selCentre">
+            <option value="none">Nothing — use values as given</option>
+            <option value="median">Median of all proteins</option>
+            <option value="trimmed">10% trimmed mean of all proteins</option>
+          </select>
+          <p class="hint" id="centreHint">Quantitative proteomics assumes most proteins do not change, so the bulk of a volcano should straddle zero. If it does not, the two conditions differ by a global scale factor and every protein is being measured against the wrong baseline.</p>
+        </div>
       </div>
 
       <div class="notice" id="dataNotice" hidden></div>
