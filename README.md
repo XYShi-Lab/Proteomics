@@ -1,4 +1,4 @@
-# Volcano Studio
+# Shi Lab Volcano & GO
 
 Interactive volcano plots for proteomics, in the browser. Drop in a results
 table, set your cutoffs, hover a dot to find out what the protein is and where
@@ -124,8 +124,14 @@ few replicates), the app says so instead of showing an empty plot.
 Font family (publication faces: Arial, Helvetica, Arial Narrow, Calibri, Times,
 Georgia…), independent sizes for tick labels, axis titles, point labels and the
 plot title, bold/italic labels, point size, opacity, outline width, per-class
-colours, background, grid, legend position, axis style, figure dimensions, and
-three preset palettes including a colour-blind-safe one.
+colours, background, grid, axis style, figure dimensions, and three preset
+palettes including a colour-blind-safe one. Every colour control offers both a
+free gradient picker and a grid of 32 print-safe presets.
+
+The legend can sit in any corner of the plot, **outside the plot to the right**
+(the figure reserves margin for it), or **float** — dragged anywhere on the
+figure with the mouse. Automatic labels route around whichever position it
+occupies.
 
 ### 6. GO clusters — organelles and pathways
 
@@ -145,6 +151,17 @@ survive greyscale printing and colour-blind readers). Two sources:
 
 You can also paste a custom gene list as a cluster.
 
+**Grouping.** Related terms are usually redundant — *mitochondrion*,
+*mitochondrial matrix* and *mitochondrial inner membrane* are largely the same
+proteins. Tick two or more clusters and press **Group** to merge them into a
+single entry: the union of their genes, under one name, one colour, one marker
+shape and one legend row. Cluster names are editable in place, and **Add all as
+one** takes every hit a search returned in a single click.
+
+**Outlines.** A dot outline (width and colour) can be applied to every point
+from either the GO panel or the Style panel — the two controls drive the same
+setting.
+
 ### 7. Pathway analysis
 
 Over-representation analysis on your up, down, all-significant, labelled or
@@ -156,9 +173,22 @@ clustered proteins, with three engines:
 | **Enrichr** | server | One library at a time |
 | **Built-in** | **your browser** | Hypergeometric test + Benjamini–Hochberg FDR over any loaded library. Needs no enrichment server. |
 
-Results land in a sortable, filterable table with p-adjusted, hit count, term
-size and fold enrichment. **Click *annotate* on any row to paint that term's
-genes straight onto the volcano plot.**
+Results land in a two-column view: a sortable, filterable table on the left,
+and a **pathway network** on the right.
+
+The network is an enrichment map. Enrichment output is a ranked list, but its
+terms are not independent — nested GO terms report the same proteins several
+times over. Drawing each term as a node and joining terms that share genes
+collapses that redundancy into visible themes. Nodes are sized by hit count and
+coloured by source (GO:BP, GO:CC, KEGG, Reactome…); edge thickness is the
+Jaccard overlap of the two gene sets, with an adjustable threshold. Scroll to
+zoom, drag to pan, double-click a node to zoom into it, double-click the
+background to fit, and export the network as its own PNG.
+
+**Click any row's *annotate* button, or any node in the network, to paint that
+term's genes straight onto the volcano plot.** The network is computed locally
+from gene lists the enrichment already returned, so it needs no extra service
+and works with the offline engine.
 
 By default the background is *the proteins actually measured in your file*,
 which is the statistically correct choice for a proteomics experiment — using
@@ -175,6 +205,10 @@ chance to detect most of them.
   enrichment table.
 - **Settings JSON** — cutoffs, styling, labels and clusters, so one look can be
   reused across experiments.
+- **Settings inside the PNG.** Every exported PNG carries its own settings in an
+  iTXt chunk. Drop that PNG back onto the app — or hand it to a colleague — and
+  the entire format is restored: cutoffs, centring, fonts, colours, labels,
+  clusters and legend placement. It stays an ordinary image everywhere else.
 
 The PNG and SVG are generated from the same draw calls that paint the screen,
 so the exported figure is exactly the figure you were looking at.
@@ -223,6 +257,8 @@ js/stats.js             hypergeometric test + Benjamini-Hochberg FDR
 js/surface.js           one drawing API with canvas and SVG back ends
 js/plot.js              the volcano figure: scales, marks, legend, label layout
 js/api.js               UniProt, Enrichr, g:Profiler, QuickGO/OLS/GO clients
+js/network.js           the enrichment-map pathway network
+js/pngmeta.js           reading and writing settings inside a PNG
 js/demo.js              simulated example dataset
 js/app.js               state, wiring, interaction
 data/demo_proteomics.csv  the example dataset as a file

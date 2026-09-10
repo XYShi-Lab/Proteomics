@@ -65,7 +65,7 @@ window.VP = window.VP || {};
       symmetricX: true,
       axisStyle: 'lines',            // 'lines' | 'box' | 'none'
 
-      legend: { show: true, position: 'top-right', showCounts: true, size: 12 },
+      legend: { show: true, position: 'top-right', showCounts: true, size: 12, float: null },
 
       label: {
         halo: true,
@@ -122,7 +122,11 @@ window.VP = window.VP || {};
     const marginLeft = Math.ceil(maxYLabel + 10 + (cfg.yLabel ? cfg.font.axisTitleSize + 8 : 0) + 6);
     const marginBottom = Math.ceil(cfg.font.tickSize + 12 + (cfg.xLabel ? cfg.font.axisTitleSize + 8 : 0));
     const marginTop = Math.ceil(hasTitle ? cfg.font.titleSize + 18 : 14);
-    const marginRight = 18;
+    let marginRight = 18;
+    if (cfg.legend.show && cfg.legend.position === 'outside-right') {
+      const ls = legendSize(state);
+      if (ls) marginRight = Math.ceil(ls.boxW + 26);
+    }
 
     const plotX = marginLeft;
     const plotY = marginTop;
@@ -216,7 +220,7 @@ window.VP = window.VP || {};
     // The legend is opaque: it is both an occupied box and a hard no-go area.
     const reserved = [];
     const lg = legendLayout(state, geom);
-    if (lg) {
+    if (lg && lg.overlapsPlot) {
       reserved.push({ x0: lg.bx - 3, y0: lg.by - 3, x1: lg.bx + lg.boxW + 3, y1: lg.by + lg.boxH + 3 });
       placed.push(reserved[0]);
     }
@@ -493,9 +497,10 @@ window.VP = window.VP || {};
     return out;
   }
 
-  /* Legend geometry, shared by the renderer and the label placer so that
-     automatic labels never end up underneath the legend box. */
-  function legendLayout(state, geom) {
+  /* Legend size depends only on its contents, so it can be measured before the
+     plot rectangle exists - which is what lets an outside-right legend reserve
+     margin without a circular dependency. */
+  function legendSize(state) {
     const cfg = state.config;
     if (!cfg.legend.show) return null;
     const entries = legendEntries(state);
@@ -513,18 +518,45 @@ window.VP = window.VP || {};
       maxW = Math.max(maxW, measureText(t, font));
       return t;
     });
+    return {
+      entries, texts, size, rowH, padBox, swatch,
+      boxW: maxW + swatch * 2 + padBox * 2 + 8,
+      boxH: entries.length * rowH + padBox * 2 - 4,
+    };
+  }
 
-    const boxW = maxW + swatch * 2 + padBox * 2 + 8;
-    const boxH = entries.length * rowH + padBox * 2 - 4;
+  /* Where that box actually sits, given the plot rectangle. */
+  function legendLayout(state, geom) {
+    const L = legendSize(state);
+    if (!L) return null;
+    const cfg = state.config;
     const pos = cfg.legend.position;
     const inset = 10;
-    let bx = geom.plotX + geom.plotW - boxW - inset;
-    let by = geom.plotY + inset;
-    if (pos === 'top-left') { bx = geom.plotX + inset; }
-    else if (pos === 'bottom-right') { by = geom.plotY + geom.plotH - boxH - inset; }
-    else if (pos === 'bottom-left') { bx = geom.plotX + inset; by = geom.plotY + geom.plotH - boxH - inset; }
+    let bx, by;
 
-    return { entries, texts, size, rowH, padBox, swatch, boxW, boxH, bx, by };
+    if (pos === 'outside-right') {
+      bx = geom.plotX + geom.plotW + 14;
+      by = geom.plotY;
+    } else if (pos === 'floating') {
+      const f = cfg.legend.float;
+      bx = f ? f.x : geom.plotX + geom.plotW - L.boxW - inset;
+      by = f ? f.y : geom.plotY + inset;
+      // Keep a dragged legend on the page even after a resize.
+      bx = clamp(bx, 2, Math.max(2, cfg.width - L.boxW - 2));
+      by = clamp(by, 2, Math.max(2, cfg.height - L.boxH - 2));
+    } else {
+      bx = pos === 'top-left' || pos === 'bottom-left'
+        ? geom.plotX + inset
+        : geom.plotX + geom.plotW - L.boxW - inset;
+      by = pos === 'bottom-right' || pos === 'bottom-left'
+        ? geom.plotY + geom.plotH - L.boxH - inset
+        : geom.plotY + inset;
+    }
+    L.bx = bx;
+    L.by = by;
+    // Only a legend drawn over the plot competes with the data for space.
+    L.overlapsPlot = pos !== 'outside-right';
+    return L;
   }
 
   function drawLegend(surface, state, geom) {
@@ -615,6 +647,6 @@ window.VP = window.VP || {};
 
   VP.plot = {
     defaultConfig, computeGeometry, autoDomain, draw, layoutLabels,
-    buildIndex, hitTest, pointsInRect, styleFor, PUB_FONTS, legendEntries, legendLayout,
+    buildIndex, hitTest, pointsInRect, styleFor, PUB_FONTS, legendEntries, legendLayout, legendSize,
   };
 })(window.VP);

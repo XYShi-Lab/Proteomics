@@ -22,6 +22,75 @@ window.VP = window.VP || {};
     { color: '#8a4b9e', shape: 'triangle' },
   ];
 
+  /* Preset swatches offered alongside the native gradient picker. Greys first,
+     then warm, cool and accent rows drawn from ColorBrewer diverging/qualitative
+     sets, so the presets are print-safe rather than arbitrary. */
+  const SWATCHES = [
+    '#000000', '#1a1a1a', '#4d4d4d', '#808080', '#b3b3b3', '#d9d9d9', '#f0f0f0', '#ffffff',
+    '#67001f', '#b2182b', '#d6604d', '#e34948', '#f4a582', '#eb6834', '#d55e00', '#eda100',
+    '#053061', '#2166ac', '#2a78d6', '#4393c3', '#6da7ec', '#92c5de', '#0072b2', '#00868b',
+    '#003c30', '#008300', '#1baf7a', '#66c2a4', '#4a3aa7', '#8a4b9e', '#e87ba4', '#762a83',
+  ];
+
+  let swatchPop = null;
+  let swatchTarget = null;
+
+  function closeSwatches() {
+    if (swatchPop) swatchPop.hidden = true;
+    swatchTarget = null;
+  }
+
+  function openSwatches(input, anchor) {
+    if (!swatchPop) {
+      swatchPop = el('div', { class: 'swatch-pop', hidden: true });
+      SWATCHES.forEach((hex) => {
+        const b = el('button', { class: 'swatch-chip', type: 'button', title: hex, style: 'background:' + hex });
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (swatchTarget) {
+            swatchTarget.value = hex;
+            swatchTarget.dispatchEvent(new Event('input', { bubbles: true }));
+            swatchTarget.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          closeSwatches();
+        });
+        swatchPop.appendChild(b);
+      });
+      document.body.appendChild(swatchPop);
+      document.addEventListener('click', closeSwatches);
+      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSwatches(); });
+      window.addEventListener('resize', closeSwatches);
+    }
+    swatchTarget = input;
+    swatchPop.hidden = false;
+    const r = anchor.getBoundingClientRect();
+    const w = 176, h = 96;
+    swatchPop.style.left = Math.min(Math.max(6, r.left), window.innerWidth - w - 8) + 'px';
+    swatchPop.style.top = (r.bottom + h > window.innerHeight - 8 ? r.top - h - 6 : r.bottom + 6) + 'px';
+  }
+
+  /* Every colour input gets a preset palette next to its gradient picker. */
+  function enhanceColorInput(input) {
+    if (input.dataset.swatched) return;
+    input.dataset.swatched = '1';
+    const wrap = el('span', { class: 'color-wrap' });
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const btn = el('button', { class: 'sw-open', type: 'button', title: 'Preset colours', text: '▾' });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (swatchPop && !swatchPop.hidden && swatchTarget === input) { closeSwatches(); return; }
+      openSwatches(input, btn);
+    });
+    wrap.appendChild(btn);
+  }
+
+  function enhanceColorInputs(root) {
+    U.$$('input[type="color"]', root || document).forEach(enhanceColorInput);
+  }
+
   const PALETTES = {
     default: { up: '#e34948', down: '#2a78d6', ns: '#b9b9b3', highlight: '#111111', grid: '#e9e9e4' },
     colorblind: { up: '#d55e00', down: '#0072b2', ns: '#bcbcb6', highlight: '#000000', grid: '#e9e9e4' },
@@ -52,7 +121,9 @@ window.VP = window.VP || {};
     organism: 'hsapiens',
     mode: 'pan',
     enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set() },
+    net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25 },
     sourceName: '',
+    termHits: [],
   };
   VP.state = state;
 
@@ -361,7 +432,7 @@ window.VP = window.VP || {};
 
   let clusterSeq = 0;
 
-  function addCluster(spec) {
+  function addCluster(spec, quiet) {
     const style = CLUSTER_STYLES[state.clusters.length % CLUSTER_STYLES.length];
     const cluster = {
       id: 'c' + (++clusterSeq),
@@ -374,11 +445,13 @@ window.VP = window.VP || {};
       source: spec.source || '',
       total: spec.total != null ? spec.total : (spec.genes ? spec.genes.size : 0),
       matched: 0,
+      selected: false,
     };
     state.clusters.push(cluster);
     applyClusters();
     recompute();
     renderClusterList();
+    if (quiet) return cluster;
     if (!cluster.matched) {
       toast('"' + cluster.name + '" has ' + cluster.total + ' member(s) but none of them are in your dataset. Check the organism.', 'error', 'No overlap');
     } else {
@@ -409,42 +482,104 @@ window.VP = window.VP || {};
     }
   }
 
+  function updateGroupBar() {
+    const n = state.clusters.filter((c) => c.selected).length;
+    const btn = $('#btnGroupSelected');
+    btn.disabled = n < 2;
+    btn.textContent = n >= 2 ? 'Group ' + n : 'Group';
+  }
+
+  /** Merge the ticked clusters into one entry with a single colour and shape. */
+  function groupSelected(name) {
+    const sel = state.clusters.filter((c) => c.selected);
+    if (sel.length < 2) return;
+    const genes = new Set(), accessions = new Set();
+    for (const c of sel) {
+      c.genes.forEach((g) => genes.add(g));
+      c.accessions.forEach((a) => accessions.add(a));
+    }
+    const first = sel[0];
+    const at = state.clusters.indexOf(first);
+    const merged = {
+      id: 'c' + (++clusterSeq),
+      name: (name && name.trim()) || 'Group of ' + sel.length,
+      genes, accessions,
+      color: first.color,
+      shape: first.shape,
+      visible: true,
+      selected: false,
+      source: sel.length + ' terms',
+      members: sel.map((c) => c.name),
+      total: genes.size,
+      matched: 0,
+    };
+    state.clusters = state.clusters.filter((c) => !c.selected);
+    state.clusters.splice(Math.min(at, state.clusters.length), 0, merged);
+    applyClusters();
+    recompute();
+    renderClusterList();
+    toast(merged.matched + ' proteins in "' + merged.name + '" (union of ' + sel.length + ' terms).', 'ok', 'Grouped');
+  }
+
   function renderClusterList() {
     const box = clear($('#clusterList'));
+    updateGroupBar();
     if (!state.clusters.length) {
       box.appendChild(el('p', { class: 'empty', text: 'No clusters yet.' }));
       return;
     }
     state.clusters.forEach((c) => {
+      const row = el('div', { class: 'cluster' + (c.selected ? ' is-picked' : '') });
+
+      const pick = el('input', { type: 'checkbox', class: 'cl-pick', checked: c.selected, title: 'Select for grouping' });
+      pick.addEventListener('change', () => {
+        c.selected = pick.checked;
+        row.classList.toggle('is-picked', c.selected);
+        updateGroupBar();
+      });
+
       const colorInput = el('input', { type: 'color', value: c.color, title: 'Cluster colour' });
       colorInput.addEventListener('input', () => { c.color = colorInput.value; render(); });
 
-      const shapeSel = el('select', { title: 'Marker shape' });
-      VP.surface.SHAPES.forEach((s) => shapeSel.appendChild(el('option', { value: s, text: s })));
-      shapeSel.value = c.shape;
-      shapeSel.addEventListener('change', () => { c.shape = shapeSel.value; render(); });
+      const nameInput = el('input', { type: 'text', class: 'cl-name', value: c.name, title: 'Rename this cluster' });
+      nameInput.addEventListener('input', () => { c.name = nameInput.value; render(); });
 
-      const vis = el('input', { type: 'checkbox', checked: c.visible, title: 'Show on plot' });
-      vis.addEventListener('change', () => {
-        c.visible = vis.checked;
+      const vis = el('button', {
+        class: 'cl-vis' + (c.visible ? ' on' : ''), type: 'button',
+        text: c.visible ? '\u25c9' : '\u25cb', title: c.visible ? 'Shown on plot' : 'Hidden',
+      });
+      vis.addEventListener('click', () => {
+        c.visible = !c.visible;
         applyClusters(); recompute(); renderClusterList();
       });
 
-      const del = el('button', { class: 'icon-btn', text: '×', title: 'Remove cluster' });
+      const del = el('button', { class: 'icon-btn cl-del', type: 'button', text: '\u00d7', title: 'Remove cluster' });
       del.addEventListener('click', () => {
         state.clusters = state.clusters.filter((x) => x !== c);
         applyClusters(); recompute(); renderClusterList();
       });
 
-      box.appendChild(el('div', { class: 'cluster' }, [
-        vis, colorInput,
-        el('div', { class: 'cluster-body' }, [
-          el('div', { class: 'cluster-name', title: c.name, text: c.name }),
-          el('div', { class: 'cluster-meta', text: c.matched + ' / ' + c.total + ' in data' + (c.source ? ' · ' + c.source : '') }),
-        ]),
-        shapeSel, del,
-      ]));
+      const shapeSel = el('select', { title: 'Marker shape' });
+      VP.surface.SHAPES.forEach((sh) => shapeSel.appendChild(el('option', { value: sh, text: sh })));
+      shapeSel.value = c.shape;
+      shapeSel.addEventListener('change', () => { c.shape = shapeSel.value; render(); });
+
+      const meta = el('div', {
+        class: 'cluster-meta',
+        title: c.members ? c.members.join('\n') : '',
+        text: c.matched + ' / ' + c.total + ' in data' + (c.source ? ' \u00b7 ' + c.source : ''),
+      });
+
+      row.appendChild(pick);
+      row.appendChild(colorInput);
+      row.appendChild(nameInput);
+      row.appendChild(vis);
+      row.appendChild(del);
+      row.appendChild(shapeSel);
+      row.appendChild(meta);
+      box.appendChild(row);
     });
+    enhanceColorInputs(box);
   }
 
   /* ======================= hover card ======================= */
@@ -624,6 +759,15 @@ window.VP = window.VP || {};
     return state.view || (state.records.length ? VP.plot.autoDomain(state) : null);
   }
 
+  /* Hit test the legend box, so a floating legend can be dragged into place. */
+  function legendAt(px, py) {
+    if (!state.geom || state.config.legend.position !== 'floating') return null;
+    const L = VP.plot.legendLayout(state, state.geom);
+    if (!L) return null;
+    if (px >= L.bx && px <= L.bx + L.boxW && py >= L.by && py <= L.by + L.boxH) return L;
+    return null;
+  }
+
   function labelAt(px, py) {
     if (!state.geom) return null;
     const laid = VP.plot.layoutLabels(state, state.geom);
@@ -654,6 +798,10 @@ window.VP = window.VP || {};
         drag.curX = p.x; drag.curY = p.y;
         drawSelectionBox(drag);
         drag.moved = true;
+      } else if (drag.kind === 'legend') {
+        state.config.legend.float = { x: p.x - drag.dx, y: p.y - drag.dy };
+        drag.moved = true;
+        render();
       } else if (drag.kind === 'label') {
         state.labelOffsets[drag.rec.i] = {
           dx: drag.baseDx + (p.x - drag.startX),
@@ -665,10 +813,12 @@ window.VP = window.VP || {};
       return;
     }
 
-    const hit = VP.plot.hitTest(state.index, p.x, p.y);
-    const onLabel = !hit && labelAt(p.x, p.y);
+    const onLegend = legendAt(p.x, p.y);
+    const hit = onLegend ? null : VP.plot.hitTest(state.index, p.x, p.y);
+    const onLabel = !hit && !onLegend && labelAt(p.x, p.y);
     canvas.classList.toggle('on-point', !!hit);
-    canvas.classList.toggle('on-label', !!onLabel);
+    canvas.classList.toggle('on-label', !!(onLabel || onLegend));
+    if (onLegend && hoverRec) hideTooltip();
 
     if (hit) {
       if (!hoverRec || hoverRec.i !== hit.rec.i) {
@@ -687,6 +837,15 @@ window.VP = window.VP || {};
   canvas.addEventListener('mousedown', (ev) => {
     if (!state.records.length || ev.button !== 0) return;
     const p = canvasPos(ev);
+
+    const lg = legendAt(p.x, p.y);
+    if (lg) {
+      drag = { kind: 'legend', dx: p.x - lg.bx, dy: p.y - lg.by, moved: false };
+      hideTooltip();
+      ev.preventDefault();
+      return;
+    }
+
     const L = labelAt(p.x, p.y);
     if (L) {
       const off = state.labelOffsets[L.rec.i];
@@ -725,6 +884,7 @@ window.VP = window.VP || {};
       }
       return;
     }
+    if (d.kind === 'legend') return;
     if (d.kind === 'label') {
       if (!d.moved) { togglePin(d.rec); }
       return;
@@ -891,6 +1051,7 @@ window.VP = window.VP || {};
       state.enrich.provider = res.provider;
       state.enrich.annotated = new Set();
       renderEnrichTable();
+      buildNetwork();
       openDrawer(true);
 
       if (!state.enrich.results.length) {
@@ -930,7 +1091,7 @@ window.VP = window.VP || {};
     rows.slice(0, 500).forEach((r) => {
       const on = state.enrich.annotated.has(r.id);
       const btn = el('button', { class: 'mini' + (on ? ' on' : ''), text: on ? 'on plot' : 'annotate' });
-      btn.addEventListener('click', () => annotateTerm(r, btn));
+      btn.addEventListener('click', () => annotateTerm(r));
 
       const tr = el('tr', { class: on ? 'is-annotated' : '' }, [
         el('td', { class: 'term-cell' }, [
@@ -959,7 +1120,7 @@ window.VP = window.VP || {};
   }
 
   /* Turn one enrichment result into a plot overlay. */
-  function annotateTerm(r, btn) {
+  function annotateTerm(r) {
     if (state.enrich.annotated.has(r.id)) {
       state.clusters = state.clusters.filter((c) => c.termId !== r.id);
       state.enrich.annotated.delete(r.id);
@@ -982,10 +1143,181 @@ window.VP = window.VP || {};
     recompute();
     renderClusterList();
     renderEnrichTable();
+    renderNetwork();
   }
 
   function openDrawer(open) {
     $('#drawer').dataset.state = open ? 'open' : 'closed';
+    // The drawer animates; measuring before it settles fits the graph to the
+    // collapsed height. Re-lay out afterwards if the pane really did change.
+    if (open) setTimeout(relayoutNetworkIfResized, 280);
+  }
+
+  function relayoutNetworkIfResized() {
+    const g = state.net.graph;
+    const wrap = $('#netWrap');
+    if (!g || !wrap || !wrap.clientWidth || !wrap.clientHeight) return;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const changed = !g.layoutW || Math.abs(w - g.layoutW) / g.layoutW > 0.15 ||
+                    Math.abs(h - g.layoutH) / g.layoutH > 0.15;
+    if (changed) {
+      VP.network.layout(g, w, h, 320);
+      state.net.view = VP.network.fit(g, w, h);
+    }
+    renderNetwork();
+  }
+
+  /* ======================= pathway network ======================= */
+
+  function buildNetwork() {
+    const res = state.enrich.results;
+    if (!res.length) { state.net.graph = null; renderNetwork(); return; }
+    const wrap = $('#netWrap');
+    const w = Math.max(320, wrap.clientWidth || 480);
+    const h = Math.max(220, wrap.clientHeight || 320);
+    const g = VP.network.build(res, { maxNodes: 60, minJaccard: state.net.overlap });
+    VP.network.layout(g, w, h, 320);
+    state.net.graph = g;
+    state.net.view = VP.network.fit(g, w, h);
+    renderNetwork();
+  }
+
+  function renderNetwork() {
+    const canvas = $('#netCanvas');
+    const wrap = $('#netWrap');
+    if (!canvas || !wrap) return;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    const g = state.net.graph;
+    $('#netEmpty').hidden = !!(g && g.nodes.length);
+    const ctx = canvas.getContext('2d');
+    VP.network.draw(ctx, g, state.net.view, {
+      dpr, background: '#131413', hover: state.net.hover, selected: state.enrich.annotated,
+    });
+  }
+
+  function bindNetwork() {
+    const canvas = $('#netCanvas');
+    const tip = $('#netTip');
+    let dragging = null;
+
+    const pos = (ev) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    };
+
+    canvas.addEventListener('mousemove', (ev) => {
+      const p = pos(ev);
+      if (dragging) {
+        state.net.view.tx += p.x - dragging.x;
+        state.net.view.ty += p.y - dragging.y;
+        dragging.x = p.x; dragging.y = p.y;
+        dragging.moved = true;
+        renderNetwork();
+        return;
+      }
+      const n = VP.network.nodeAt(state.net.graph, state.net.view, p.x, p.y);
+      canvas.classList.toggle('on-node', !!n);
+      if (n !== state.net.hover) { state.net.hover = n; renderNetwork(); }
+      if (n) {
+        const r = n.row;
+        const genes = (r.genes || []).slice(0, 18).join(' ');
+        tip.hidden = false;
+        tip.innerHTML = '<b>' + U.escapeHtml(n.name) + '</b>' +
+          '<span class="nt-meta">' + U.escapeHtml(r.source || '') +
+          ' · p' + (r.p_adjusted != null ? '\u2090\u2094\u2c7c' : '') + ' ' +
+          fmtP(r.p_adjusted != null ? r.p_adjusted : r.p_value) +
+          ' · ' + (r.intersection_size == null ? '?' : r.intersection_size) + ' hits' +
+          (r.term_size ? ' / ' + r.term_size : '') + '</span>' +
+          (genes ? '<span class="nt-genes">' + U.escapeHtml(genes) +
+            ((r.genes || []).length > 18 ? ' …' : '') + '</span>' : '');
+        const wrap = $('#netWrap');
+        const tw = 260;
+        tip.style.left = Math.min(p.x + 14, wrap.clientWidth - tw - 6) + 'px';
+        tip.style.top = Math.min(p.y + 14, Math.max(6, wrap.clientHeight - tip.offsetHeight - 6)) + 'px';
+      } else {
+        tip.hidden = true;
+      }
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      tip.hidden = true;
+      if (state.net.hover) { state.net.hover = null; renderNetwork(); }
+    });
+
+    canvas.addEventListener('mousedown', (ev) => {
+      const p = pos(ev);
+      dragging = { x: p.x, y: p.y, moved: false, node: VP.network.nodeAt(state.net.graph, state.net.view, p.x, p.y) };
+      canvas.classList.add('is-drag');
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      const d = dragging;
+      dragging = null;
+      canvas.classList.remove('is-drag');
+      // A click that did not drag, on a node, annotates it on the volcano.
+      if (!d.moved && d.node) {
+        annotateTerm(d.node.row, null);
+        renderNetwork();
+      }
+    });
+
+    canvas.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const p = pos(ev);
+      zoomNetwork(p.x, p.y, ev.deltaY > 0 ? 1 / 1.15 : 1.15);
+    }, { passive: false });
+
+    // Double-click a node to zoom into it; double-click the background to fit.
+    canvas.addEventListener('dblclick', (ev) => {
+      const p = pos(ev);
+      const n = VP.network.nodeAt(state.net.graph, state.net.view, p.x, p.y);
+      if (n) {
+        const wrap = $('#netWrap');
+        const target = 2.4;
+        state.net.view = {
+          k: target,
+          tx: wrap.clientWidth / 2 - n.x * target,
+          ty: wrap.clientHeight / 2 - n.y * target,
+        };
+        renderNetwork();
+      } else {
+        fitNetwork();
+      }
+    });
+
+    $('#btnNetFit').addEventListener('click', fitNetwork);
+    $('#btnNetPng').addEventListener('click', () => {
+      const c = $('#netCanvas');
+      if (!state.net.graph) { toast('Run an enrichment first.', 'error'); return; }
+      c.toBlob((b) => U.downloadBlob(b, 'pathway_network.png'), 'image/png');
+    });
+    $('#rngNetOverlap').addEventListener('input', () => {
+      state.net.overlap = parseFloat($('#rngNetOverlap').value) / 100;
+      $('#outNetOverlap').textContent = state.net.overlap.toFixed(2);
+    });
+    $('#rngNetOverlap').addEventListener('change', buildNetwork);
+
+    window.addEventListener('resize', debounce(relayoutNetworkIfResized, 220));
+  }
+
+  function zoomNetwork(px, py, factor) {
+    const v = state.net.view;
+    const k = clamp(v.k * factor, 0.15, 8);
+    const scale = k / v.k;
+    state.net.view = { k, tx: px - (px - v.tx) * scale, ty: py - (py - v.ty) * scale };
+    renderNetwork();
+  }
+
+  function fitNetwork() {
+    const wrap = $('#netWrap');
+    if (!state.net.graph || !wrap.clientWidth) return;
+    state.net.view = VP.network.fit(state.net.graph, wrap.clientWidth, wrap.clientHeight);
+    renderNetwork();
   }
 
   /* ======================= GO term search ======================= */
@@ -1022,10 +1354,15 @@ window.VP = window.VP || {};
       }
 
       clear(box);
+      state.termHits = items;
+      const head = $('#termResultsHead');
       if (!items.length) {
+        head.hidden = true;
         box.appendChild(el('p', { class: 'empty', text: 'No matching terms.' }));
         return;
       }
+      head.hidden = false;
+      $('#termCount').textContent = items.length + ' result' + (items.length === 1 ? '' : 's');
       items.forEach((it) => {
         const add = el('button', { class: 'term-add', text: '+', title: 'Overlay on plot' });
         const row = el('div', { class: 'term' }, [
@@ -1067,6 +1404,52 @@ window.VP = window.VP || {};
     }
   }
 
+  /** Resolve a search hit to its member genes, fetching from UniProt if needed. */
+  async function resolveHit(it) {
+    if (it.genes) return { genes: it.genes, accessions: new Set(), total: it.genes.size, source: it.source };
+    const taxon = (VP.api.ORGANISMS.find((o) => o.id === state.organism) || {}).taxon;
+    const m = await VP.api.fetchGoMembers(it.goId, taxon, { reviewed: true });
+    return { genes: m.genes, accessions: m.accessions, total: m.n, source: 'UniProt' };
+  }
+
+  /** One click: take every term the search returned. */
+  async function addAllHits(asOne) {
+    const hits = state.termHits || [];
+    if (!hits.length) return;
+    const btns = [$('#btnAddAllOne'), $('#btnAddAllSep')];
+    btns.forEach((b) => { b.disabled = true; });
+    const label = asOne ? 'Add all as one' : 'Add each';
+    let done = 0, failed = 0;
+    try {
+      const genes = new Set(), accessions = new Set();
+      for (const it of hits) {
+        try {
+          const r = await resolveHit(it);
+          if (asOne) {
+            r.genes.forEach((g) => genes.add(g));
+            r.accessions.forEach((a) => accessions.add(a));
+          } else {
+            addCluster({ name: it.title, genes: r.genes, accessions: r.accessions, total: r.total, source: r.source }, true);
+          }
+          done++;
+          btns[asOne ? 0 : 1].textContent = done + '/' + hits.length + '\u2026';
+        } catch (err) { failed++; }
+      }
+      if (asOne && genes.size) {
+        const q = $('#inpTermSearch').value.trim();
+        addCluster({
+          name: q ? q + ' (' + done + ' terms)' : done + ' terms',
+          genes, accessions, total: genes.size,
+          source: done + ' terms',
+        }, true);
+      }
+      renderClusterList();
+      toast(done + ' term(s) added' + (failed ? ', ' + failed + ' failed' : '') + '.', failed ? '' : 'ok', 'Clusters');
+    } finally {
+      btns.forEach((b, i) => { b.disabled = false; b.textContent = i === 0 ? 'Add all as one' : 'Add each'; });
+    }
+  }
+
   async function loadLibraryUI(name) {
     const status = $('#libStatus');
     status.textContent = 'downloading…';
@@ -1098,9 +1481,20 @@ window.VP = window.VP || {};
     c.height = Math.round(cfg.height * scale);
     const ctx = c.getContext('2d');
     VP.plot.draw(VP.surface.canvas(ctx, scale), state);
-    c.toBlob((blob) => {
-      U.downloadBlob(blob, figureName('png'));
-      toast(c.width + ' × ' + c.height + ' px', 'ok', 'PNG exported');
+    c.toBlob(async (blob) => {
+      let out = blob;
+      let stamped = false;
+      try {
+        const buf = await blob.arrayBuffer();
+        const bytes = VP.pngmeta.embed(buf, JSON.stringify(sessionData()));
+        out = new Blob([bytes], { type: 'image/png' });
+        stamped = true;
+      } catch (err) {
+        // A figure is worth more than its metadata: ship the plain PNG.
+        console.warn('Could not embed settings in the PNG:', err);
+      }
+      U.downloadBlob(out, figureName('png'));
+      toast(c.width + ' × ' + c.height + ' px' + (stamped ? ' · settings embedded' : ''), 'ok', 'PNG exported');
     }, 'image/png');
   }
 
@@ -1142,8 +1536,8 @@ window.VP = window.VP || {};
     U.downloadText(U.toCsv(rows), 'enrichment_' + (state.enrich.provider || '').replace(/\W+/g, '_') + '.csv', 'text/csv');
   }
 
-  function saveSession() {
-    const data = {
+  function sessionData() {
+    return {
       version: 1,
       config: state.config,
       thresholds: state.thresholds,
@@ -1157,7 +1551,10 @@ window.VP = window.VP || {};
         source: c.source, genes: Array.from(c.genes), accessions: Array.from(c.accessions),
       })),
     };
-    U.downloadText(JSON.stringify(data, null, 2), 'volcano_studio_settings.json', 'application/json');
+  }
+
+  function saveSession() {
+    U.downloadText(JSON.stringify(sessionData(), null, 2), 'shi_lab_volcano_settings.json', 'application/json');
   }
 
   function restoreSession(json) {
@@ -1187,6 +1584,27 @@ window.VP = window.VP || {};
       toast('Settings restored.', 'ok');
     } catch (e) {
       toast('That file could not be read as a settings file.', 'error');
+    }
+  }
+
+  /** Recover the settings a PNG was exported with. */
+  async function restoreFromPng(file) {
+    try {
+      const buf = await file.arrayBuffer();
+      if (!VP.pngmeta.isPng(new Uint8Array(buf))) {
+        toast('That file is not a PNG.', 'error');
+        return;
+      }
+      const json = VP.pngmeta.extract(buf);
+      if (!json) {
+        toast('No settings found in that PNG. Only images exported by this site carry them — and some editors strip metadata on re-save.',
+          'error', 'Nothing to restore');
+        return;
+      }
+      restoreSession(json);
+      toast('Format restored from ' + (file.name || 'the image') + '.', 'ok', 'Settings loaded');
+    } catch (err) {
+      toast(err && err.message ? err.message : String(err), 'error', 'Could not read that PNG');
     }
   }
 
@@ -1243,6 +1661,7 @@ window.VP = window.VP || {};
     $('#selLabelText').value = state.labelTextMode;
     $('#selOrganism').value = state.organism;
     $('#selCentre').value = state.centre;
+    if (state.syncOutline) state.syncOutline();
     updatePngHint();
   }
 
@@ -1445,6 +1864,7 @@ window.VP = window.VP || {};
     $('#rngStroke').addEventListener('input', () => {
       state.config.point.strokeWidth = parseFloat($('#rngStroke').value) / 10;
       $('#outStroke').textContent = state.config.point.strokeWidth.toFixed(1);
+      if (state.syncOutline) state.syncOutline();
       render();
     });
 
@@ -1474,6 +1894,10 @@ window.VP = window.VP || {};
       const v = e.target.value;
       state.config.legend.show = v !== 'none';
       if (v !== 'none') state.config.legend.position = v;
+      if (v === 'floating') {
+        state.config.legend.float = null;   // start from the default corner
+        setStatus('Drag the legend box to place it anywhere on the figure');
+      }
       render();
     });
     const chkBind = (id, apply) => $('#' + id).addEventListener('change', (e) => { apply(e.target.checked); render(); });
@@ -1536,6 +1960,44 @@ window.VP = window.VP || {};
     document.querySelectorAll('#termQuickPicks .chip').forEach((c) => {
       c.addEventListener('click', () => { $('#inpTermSearch').value = c.textContent; searchTerms(); });
     });
+    $('#btnAddAllOne').addEventListener('click', () => addAllHits(true));
+    $('#btnAddAllSep').addEventListener('click', () => addAllHits(false));
+    $('#btnGroupSelected').addEventListener('click', () => {
+      groupSelected($('#inpGroupName').value);
+      $('#inpGroupName').value = '';
+    });
+    $('#btnSelectAllClusters').addEventListener('click', () => {
+      const all = state.clusters.every((c) => c.selected);
+      state.clusters.forEach((c) => { c.selected = !all; });
+      renderClusterList();
+    });
+
+    /* Outline controls mirror the ones in the Style panel - same state, two
+       places to reach it. */
+    const syncOutline = () => {
+      const w = state.config.point.strokeWidth;
+      $('#rngOutline').value = String(Math.round(w * 10));
+      $('#outOutline').textContent = w.toFixed(1);
+      $('#chkOutlineAll').checked = w > 0;
+      $('#colOutline').value = state.config.point.strokeColor;
+      $('#rngStroke').value = String(Math.round(w * 10));
+      $('#outStroke').textContent = w.toFixed(1);
+    };
+    state.syncOutline = syncOutline;
+    $('#rngOutline').addEventListener('input', () => {
+      state.config.point.strokeWidth = parseFloat($('#rngOutline').value) / 10;
+      syncOutline(); render();
+    });
+    $('#chkOutlineAll').addEventListener('change', (e) => {
+      state.config.point.strokeWidth = e.target.checked
+        ? (state.config.point.strokeWidth > 0 ? state.config.point.strokeWidth : 0.8) : 0;
+      syncOutline(); render();
+    });
+    $('#colOutline').addEventListener('input', () => {
+      state.config.point.strokeColor = $('#colOutline').value;
+      render();
+    });
+
     $('#btnAddCustomCluster').addEventListener('click', () => {
       const name = $('#inpCustomName').value.trim() || 'Custom set';
       const terms = parseTerms($('#inpCustomGenes').value).map((t) => t.toUpperCase());
@@ -1592,6 +2054,12 @@ window.VP = window.VP || {};
     $('#btnCsvEnrich').addEventListener('click', exportEnrichCsv);
     $('#btnSaveSession').addEventListener('click', saveSession);
     $('#btnLoadSession').addEventListener('click', () => $('#sessionInput').click());
+    $('#btnLoadPng').addEventListener('click', () => $('#pngInput').click());
+    $('#pngInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) restoreFromPng(f);
+      e.target.value = '';
+    });
     $('#sessionInput').addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
       if (!f) return;
@@ -1627,6 +2095,8 @@ window.VP = window.VP || {};
 
   async function handleFile(file) {
     const name = file.name || 'file';
+    // A PNG dropped here is a figure to recover settings from, not a table.
+    if (/\.png$/i.test(name) || file.type === 'image/png') { restoreFromPng(file); return; }
     setStatus('Reading ' + name + '…');
     try {
       if (/\.xlsx?$|\.xlsm$/i.test(name)) {
@@ -1668,6 +2138,8 @@ window.VP = window.VP || {};
 
   function boot() {
     bind();
+    bindNetwork();
+    enhanceColorInputs();
     syncControlsFromState();
     setMode('pan');
     renderEnrichTable();

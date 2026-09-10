@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Volcano Studio — interactive volcano plots for proteomics</title>
+<title>Shi Lab Volcano &amp; GO — interactive volcano plots for proteomics</title>
 <meta name="description" content="Interactive volcano plots for proteomic data: hover for protein annotation, label protein lists, overlay GO/organelle clusters, run pathway enrichment, export publication-ready PNG and SVG.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,7 +18,7 @@
   <div class="brand">
     <span class="brand-mark" aria-hidden="true"></span>
     <span class="brand-text">
-      <b>Volcano</b><i>Studio</i>
+      <b>Shi Lab</b><i>Volcano &amp; GO</i>
       <small>proteomics differential expression</small>
     </span>
   </div>
@@ -58,7 +58,7 @@
       <h2 class="panel-title">Data<em>load a results table</em></h2>
 
       <div class="dropzone" id="dropzone">
-        <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.tab,.xlsx,.xlsm,.text" hidden>
+        <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.tab,.xlsx,.xlsm,.text,.png" hidden>
         <p class="dz-lead">Drop a results table here</p>
         <p class="dz-sub">.xlsx · .csv · .tsv · .txt</p>
         <button class="btn small" id="btnBrowse" type="button">Choose file</button>
@@ -232,8 +232,12 @@
         </div>
         <div class="field"><label for="selLegendPos">Legend</label>
           <select id="selLegendPos">
-            <option value="top-right">Top right</option><option value="top-left">Top left</option>
-            <option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option>
+            <option value="top-right">Inside — top right</option>
+            <option value="top-left">Inside — top left</option>
+            <option value="bottom-right">Inside — bottom right</option>
+            <option value="bottom-left">Inside — bottom left</option>
+            <option value="outside-right">Right of plot</option>
+            <option value="floating">Floating — drag to place</option>
             <option value="none">Hidden</option>
           </select>
         </div>
@@ -328,10 +332,31 @@
         </div>
       </div>
 
+      <div class="results-head" id="termResultsHead" hidden>
+        <span class="rh-count" id="termCount"></span>
+        <button class="btn small" id="btnAddAllOne" type="button">Add all as one</button>
+        <button class="btn small ghost" id="btnAddAllSep" type="button">Add each</button>
+      </div>
       <div class="results" id="termResults"><p class="empty">Search a compartment or pathway to overlay it on the plot.</p></div>
 
       <h3 class="sub">Active clusters</h3>
+      <div class="group-bar">
+        <input type="text" id="inpGroupName" placeholder="Group name (optional)">
+        <button class="btn small" id="btnGroupSelected" type="button" disabled>Group</button>
+        <button class="btn small ghost" id="btnSelectAllClusters" type="button">All</button>
+      </div>
+      <p class="hint">Tick two or more clusters and press <b>Group</b> to merge them into one entry sharing a single colour, shape and legend label.</p>
       <div class="clusterlist" id="clusterList"><p class="empty">No clusters yet.</p></div>
+
+      <h3 class="sub">Dot outlines</h3>
+      <div class="row tight">
+        <label class="check"><input type="checkbox" id="chkOutlineAll"> outline every dot</label>
+        <input type="color" id="colOutline" value="#333333" title="Outline colour">
+      </div>
+      <div class="field slider-field">
+        <label for="rngOutline">Outline width <output id="outOutline" class="mono">0.0</output></label>
+        <input type="range" id="rngOutline" min="0" max="30" step="1" value="0">
+      </div>
 
       <details class="fold">
         <summary>Add a custom cluster</summary>
@@ -430,7 +455,10 @@
       <h3 class="sub">Session</h3>
       <button class="btn ghost block" id="btnSaveSession" type="button">Save settings (JSON)</button>
       <button class="btn ghost block" id="btnLoadSession" type="button">Restore settings…</button>
+      <button class="btn ghost block" id="btnLoadPng" type="button">Restore format from a PNG…</button>
       <input type="file" id="sessionInput" accept=".json" hidden>
+      <input type="file" id="pngInput" accept="image/png,.png" hidden>
+      <p class="hint">Every PNG this site exports carries its own settings inside the image file. Drop one back in — or hand it to a colleague — to recover the exact look, no separate settings file needed.</p>
       <p class="hint">Settings cover cutoffs, styling, labels and clusters — not the data itself, so you can reuse one look across experiments.</p>
       <button class="btn ghost block danger" id="btnClearCache" type="button">Clear cached annotations</button>
     </section>
@@ -471,6 +499,8 @@
         <span class="dh-chev" aria-hidden="true"></span>
       </button>
       <div class="drawer-body">
+       <div class="drawer-split">
+        <div class="drawer-pane">
         <div class="table-tools">
           <input type="search" id="enrichFilter" placeholder="Filter terms…">
           <span class="hint" id="enrichProvider"></span>
@@ -491,6 +521,26 @@
             <tbody id="enrichBody"></tbody>
           </table>
         </div>
+        </div>
+
+        <div class="drawer-pane net-pane">
+          <div class="net-tools">
+            <span class="net-title">Pathway network</span>
+            <label class="net-ctl">overlap
+              <input type="range" id="rngNetOverlap" min="5" max="80" step="5" value="25">
+              <output id="outNetOverlap" class="mono">0.25</output>
+            </label>
+            <button class="mini" id="btnNetFit" type="button">Fit</button>
+            <button class="mini" id="btnNetPng" type="button">PNG</button>
+          </div>
+          <div class="net-wrap" id="netWrap">
+            <canvas id="netCanvas"></canvas>
+            <div class="net-empty" id="netEmpty">Run an enrichment to see how the terms relate.</div>
+            <div class="net-tip" id="netTip" hidden></div>
+          </div>
+          <div class="net-foot" id="netFoot">Nodes are terms, sized by hit count and coloured by source. Edges join terms that share genes. Scroll to zoom · drag to pan · double-click a node to zoom in · click to annotate it on the plot.</div>
+        </div>
+       </div>
       </div>
     </section>
   </main>
@@ -521,7 +571,7 @@
 <div class="modal" id="helpModal" hidden>
   <div class="modal-card">
     <button class="modal-close" id="btnHelpClose" type="button" aria-label="Close">×</button>
-    <h2>Volcano Studio</h2>
+    <h2>Shi Lab Volcano &amp; GO</h2>
     <p class="lede">Everything runs in your browser. Your data is never uploaded — only gene and protein <em>names</em> are ever sent out, and only when you ask for annotation or enrichment.</p>
     <ol class="guide">
       <li><b>Load</b> an .xlsx, .csv or .tsv results table. Columns are detected automatically; check the mapping if your file is unusual.</li>
@@ -544,8 +594,10 @@
 <script src="js/xlsx.js"></script>
 <script src="js/data.js"></script>
 <script src="js/stats.js"></script>
+<script src="js/pngmeta.js"></script>
 <script src="js/surface.js"></script>
 <script src="js/plot.js"></script>
+<script src="js/network.js"></script>
 <script src="js/api.js"></script>
 <script src="js/demo.js"></script>
 <script src="js/app.js"></script>
