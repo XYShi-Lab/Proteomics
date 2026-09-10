@@ -229,6 +229,21 @@ window.VP = window.VP || {};
   function styleFor(rec, state) {
     const cfg = state.config;
     const base = cfg.point.size;
+    // A muted cluster's members are drawn exactly like non-significant dots -
+    // their classification is unchanged, they are just pushed into the background.
+    if (rec.muted) {
+      return {
+        color: cfg.colors.ns,
+        shape: 'circle',
+        r: base * cfg.point.nsScale,
+        priority: -1,
+        opacity: cfg.point.opacity,
+        stroke: cfg.point.strokeWidth > 0 ? cfg.point.strokeColor : null,
+        strokeWidth: cfg.point.strokeWidth,
+        strokeOpacity: Math.min(1, cfg.point.opacity + 0.25),
+        cluster: null,
+      };
+    }
     let color = cfg.colors[rec.cls] || cfg.colors.ns;
     let shape = 'circle';
     let r = rec.cls === 'ns' ? base * cfg.point.nsScale : base;
@@ -568,7 +583,7 @@ window.VP = window.VP || {};
   }
 
   function visibleClusters(state) {
-    return state.clusters.filter((c) => c.visible && c.matched);
+    return state.clusters.filter((c) => c.visible && !c.muted && c.matched);
   }
 
   function legendEntries(state) {

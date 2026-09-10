@@ -120,7 +120,7 @@ window.VP = window.VP || {};
     lookup: null,
     organism: 'hsapiens',
     mode: 'pan',
-    enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set(), showGenes: true, expanded: new Set() },
+    enrich: { results: [], provider: '', sortKey: 'p_adjusted', sortDir: 'asc', filter: '', annotated: new Set(), labelled: new Set(), showGenes: true, expanded: new Set() },
     net: { graph: null, view: { k: 1, tx: 0, ty: 0 }, hover: null, overlap: 0.25, topN: 6, colorMap: new Map() },
     axisUndo: null,
     legendHover: false,
@@ -369,6 +369,14 @@ window.VP = window.VP || {};
     // Per-cluster up/down tallies follow the cutoffs, so refresh them here.
     for (const c of state.clusters) { c.up = 0; c.down = 0; }
     for (const r of state.records) {
+      if (r.muted) {
+        for (const c of state.clusters) {
+          if (!c.muted || !c.visible || !memberOf(c, r)) continue;
+          if (r.cls === 'up') c.up++;
+          else if (r.cls === 'down') c.down++;
+        }
+        continue;
+      }
       if (!r.clusters) continue;
       for (const c of r.clusters) {
         if (r.cls === 'up') c.up++;
@@ -553,6 +561,7 @@ window.VP = window.VP || {};
       total: spec.total != null ? spec.total : (spec.genes ? spec.genes.size : 0),
       matched: 0,
       selected: false,
+      muted: false,
     };
     state.clusters.push(cluster);
     applyClusters();
@@ -567,28 +576,44 @@ window.VP = window.VP || {};
     return cluster;
   }
 
+  function memberOf(cluster, r) {
+    for (const g of r.genes) if (cluster.genes.has(g.toUpperCase())) return true;
+    if (cluster.accessions.size) {
+      for (const id of r.ids) {
+        if (cluster.accessions.has(id.toUpperCase()) || cluster.accessions.has(baseAcc(id))) return true;
+      }
+    }
+    if (r.name && cluster.genes.has(r.name.toUpperCase().replace(/_[A-Z0-9]+$/, ''))) return true;
+    return false;
+  }
+
   function applyClusters() {
-    for (const r of state.records) r.clusters = null;
+    for (const r of state.records) { r.clusters = null; r.muted = false; }
+
+    // Muted first, so an explicit highlight can override it below.
     for (const c of state.clusters) {
-      c.matched = 0;
-      c.up = 0;
-      c.down = 0;
-      if (!c.visible) continue;
+      if (!c.visible || !c.muted) continue;
+      c.matched = 0; c.up = 0; c.down = 0;
       for (const r of state.records) {
-        let hit = false;
-        for (const g of r.genes) { if (c.genes.has(g.toUpperCase())) { hit = true; break; } }
-        if (!hit && c.accessions.size) {
-          for (const id of r.ids) {
-            if (c.accessions.has(id.toUpperCase()) || c.accessions.has(baseAcc(id))) { hit = true; break; }
-          }
-        }
-        if (!hit && r.name && c.genes.has(r.name.toUpperCase().replace(/_[A-Z0-9]+$/, ''))) hit = true;
-        if (hit) {
-          (r.clusters || (r.clusters = [])).push(c);
-          c.matched++;
-          if (r.cls === 'up') c.up++;
-          else if (r.cls === 'down') c.down++;
-        }
+        if (!memberOf(c, r)) continue;
+        r.muted = true;
+        c.matched++;
+        if (r.cls === 'up') c.up++;
+        else if (r.cls === 'down') c.down++;
+      }
+    }
+
+    for (const c of state.clusters) {
+      c.matched = c.muted ? c.matched : 0;
+      if (!c.muted) { c.up = 0; c.down = 0; }
+      if (!c.visible || c.muted) continue;
+      for (const r of state.records) {
+        if (!memberOf(c, r)) continue;
+        (r.clusters || (r.clusters = [])).push(c);
+        r.muted = false;        // an explicit overlay beats a greyed-out set
+        c.matched++;
+        if (r.cls === 'up') c.up++;
+        else if (r.cls === 'down') c.down++;
       }
     }
   }
@@ -619,6 +644,7 @@ window.VP = window.VP || {};
       shape: first.shape,
       visible: true,
       selected: false,
+      muted: sel.some((c) => c.muted) && sel.every((c) => c.muted),
       source: sel.length + ' terms',
       members: sel.map((c) => c.name),
       total: genes.size,
@@ -640,7 +666,9 @@ window.VP = window.VP || {};
       return;
     }
     state.clusters.forEach((c) => {
-      const row = el('div', { class: 'cluster' + (c.selected ? ' is-picked' : '') });
+      const row = el('div', {
+        class: 'cluster' + (c.selected ? ' is-picked' : '') + (c.muted ? ' is-muted' : ''),
+      });
 
       const pick = el('input', { type: 'checkbox', class: 'cl-pick', checked: c.selected, title: 'Select for grouping' });
       pick.addEventListener('change', () => {
@@ -654,6 +682,17 @@ window.VP = window.VP || {};
 
       const nameInput = el('input', { type: 'text', class: 'cl-name', value: c.name, title: 'Rename this cluster' });
       nameInput.addEventListener('input', () => { c.name = nameInput.value; render(); });
+
+      const mute = el('button', {
+        class: 'cl-mute' + (c.muted ? ' on' : ''), type: 'button', text: '\u25cf',
+        title: c.muted
+          ? 'Greyed out — drawn as background dots. Click to restore its colour.'
+          : 'Grey out: draw these proteins as background dots',
+      });
+      mute.addEventListener('click', () => {
+        c.muted = !c.muted;
+        applyClusters(); recompute(); renderClusterList();
+      });
 
       const vis = el('button', {
         class: 'cl-vis' + (c.visible ? ' on' : ''), type: 'button',
@@ -678,12 +717,14 @@ window.VP = window.VP || {};
       const meta = el('div', {
         class: 'cluster-meta',
         title: c.members ? c.members.join('\n') : '',
-        text: c.matched + ' / ' + c.total + ' in data' + (c.source ? ' \u00b7 ' + c.source : ''),
+        text: c.matched + ' / ' + c.total + ' in data' +
+          (c.muted ? ' \u00b7 greyed out' : '') + (c.source ? ' \u00b7 ' + c.source : ''),
       });
 
       row.appendChild(pick);
       row.appendChild(colorInput);
       row.appendChild(nameInput);
+      row.appendChild(mute);
       row.appendChild(vis);
       row.appendChild(del);
       row.appendChild(shapeSel);
@@ -1221,6 +1262,7 @@ window.VP = window.VP || {};
       state.enrich.results = res.results || [];
       state.enrich.provider = res.provider;
       state.enrich.annotated = new Set();
+      state.enrich.labelled = new Set();
       assignEnrichColors();
       renderEnrichTable();
       buildNetwork();
@@ -1262,8 +1304,18 @@ window.VP = window.VP || {};
 
     rows.slice(0, 500).forEach((r) => {
       const on = state.enrich.annotated.has(r.id);
-      const btn = el('button', { class: 'mini' + (on ? ' on' : ''), text: on ? 'on plot' : 'annotate' });
+      const btn = el('button', {
+        class: 'mini' + (on ? ' on' : ''), text: on ? 'coloured' : 'colour',
+        title: 'Colour this term\u2019s proteins on the volcano plot',
+      });
       btn.addEventListener('click', () => annotateTerm(r));
+
+      const lab = state.enrich.labelled.has(r.id);
+      const btnLab = el('button', {
+        class: 'mini' + (lab ? ' on' : ''), text: lab ? 'labelled' : 'label',
+        title: 'Write the gene names of this term\u2019s proteins onto the plot',
+      });
+      btnLab.addEventListener('click', () => labelTerm(r));
 
       const assigned = state.net.colorMap.get(r.id);
       const tr = el('tr', { class: on ? 'is-annotated' : '' }, [
@@ -1285,7 +1337,7 @@ window.VP = window.VP || {};
         el('td', { class: 'num', text: String(r.intersection_size == null ? '—' : r.intersection_size) }),
         el('td', { class: 'num', text: String(r.term_size == null ? '—' : r.term_size) }),
         el('td', { class: 'num', text: r.fold_enrichment ? fmtNum(r.fold_enrichment, 1) : '—' }),
-        el('td', {}, btn),
+        el('td', { class: 'act' }, [btn, btnLab]),
       ]);
       body.appendChild(tr);
     });
@@ -1320,6 +1372,40 @@ window.VP = window.VP || {};
       });
     }
     return node;
+  }
+
+  /** Which records in the dataset belong to an enriched term. */
+  function recordsForTerm(r) {
+    const out = new Set();
+    for (const g of (r.genes || [])) {
+      const hit = state.lookup && (state.lookup.get(String(g).toUpperCase()) ||
+                                   state.lookup.get(baseAcc(String(g))));
+      if (hit) hit.forEach((i) => out.add(i));
+    }
+    return out;
+  }
+
+  /* Pin a name onto every protein driving this term. */
+  function labelTerm(r) {
+    const idx = recordsForTerm(r);
+    if (!idx.size) {
+      toast('None of that term\u2019s genes matched a protein in your data.', 'error');
+      return;
+    }
+    pushLabelHistory();
+    if (state.enrich.labelled.has(r.id)) {
+      idx.forEach((i) => state.pinned.delete(i));
+      state.enrich.labelled.delete(r.id);
+    } else {
+      idx.forEach((i) => state.pinned.add(i));
+      state.enrich.labelled.add(r.id);
+      if (idx.size > 25) {
+        toast(idx.size + ' proteins labelled — the plot will be crowded. Undo is available, ' +
+          'and labels can be dragged apart.', '', r.name || r.id);
+      }
+    }
+    recompute();
+    renderEnrichTable();
   }
 
   /* Turn one enrichment result into a plot overlay. */
@@ -1804,7 +1890,7 @@ window.VP = window.VP || {};
       autoLabelN: state.autoLabelN,
       proteinList: $('#proteinList').value,
       clusters: state.clusters.map((c) => ({
-        name: c.name, color: c.color, shape: c.shape, visible: c.visible,
+        name: c.name, color: c.color, shape: c.shape, visible: c.visible, muted: !!c.muted,
         source: c.source, genes: Array.from(c.genes), accessions: Array.from(c.accessions),
       })),
     };
@@ -1827,7 +1913,7 @@ window.VP = window.VP || {};
       if (Array.isArray(d.clusters)) {
         state.clusters = d.clusters.map((c, i) => ({
           id: 'c' + (++clusterSeq), name: c.name, color: c.color, shape: c.shape,
-          visible: c.visible !== false, source: c.source || 'restored',
+          visible: c.visible !== false, muted: !!c.muted, source: c.source || 'restored',
           genes: new Set(c.genes || []), accessions: new Set(c.accessions || []),
           total: (c.genes || []).length, matched: 0,
         }));

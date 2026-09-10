@@ -179,6 +179,13 @@ survive greyscale printing and colour-blind readers). Two sources:
 
 You can also paste a custom gene list as a cluster.
 
+**Grey out.** A cluster can be pushed into the background instead of removed:
+its proteins are drawn as plain grey dots like the non-significant ones, and it
+leaves the legend. Their classification and counts are untouched — this changes
+only what the eye is drawn to, which is what you want when one large compartment
+is swamping everything else. A protein that also belongs to a cluster you are
+highlighting keeps that colour.
+
 **Grouping.** Related terms are usually redundant — *mitochondrion*,
 *mitochondrial matrix* and *mitochondrial inner membrane* are largely the same
 proteins. Tick two or more clusters and press **Group** to merge them into a
@@ -233,8 +240,10 @@ background to fit, and export the network as its own PNG.
 Each row lists the genes driving that term. **Show genes** turns the lists off
 for a compact table, and a truncated list expands to the full set on click.
 
-**Click any row's *annotate* button, or any node in the network, to paint that
-term's genes straight onto the volcano plot.** The network is computed locally
+Every row has two actions. **colour** paints that term's proteins onto the
+volcano plot as a cluster; **label** writes their gene names onto the plot.
+Both toggle off again, and both are covered by the labelling undo. Clicking a
+node in the network does the same as **colour**. The network is computed locally
 from gene lists the enrichment already returned, so it needs no extra service
 and works with the offline engine.
 

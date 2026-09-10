@@ -677,10 +677,10 @@ input[type="range"]::-moz-range-thumb {
 /* Two rows per cluster: identity on top, styling underneath. */
 .cluster {
   display: grid;
-  grid-template-columns: auto auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto auto auto;
   grid-template-areas:
-    "pick colour name  vis   del"
-    ".    shape  meta  meta  meta";
+    "pick colour name  mute vis  del"
+    ".    shape  meta  meta meta meta";
   align-items: center;
   gap: 5px 7px;
   padding: 8px 10px;
@@ -691,6 +691,7 @@ input[type="range"]::-moz-range-thumb {
 .cl-pick { grid-area: pick; margin: 0; accent-color: var(--amber); width: 13px; height: 13px; }
 .cluster .color-wrap { grid-area: colour; }
 .cl-name { grid-area: name; }
+.cl-mute { grid-area: mute; }
 .cl-vis { grid-area: vis; }
 .cl-del { grid-area: del; }
 .cluster select { grid-area: shape; }
@@ -719,6 +720,21 @@ input[type="range"]::-moz-range-thumb {
   color: var(--fg-mute);
 }
 .cl-vis.on { color: var(--teal); }
+
+.cl-mute {
+  appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px;
+  color: var(--fg-mute);
+}
+.cl-mute:hover { color: var(--fg); }
+.cl-mute.on { color: #8b8c82; text-shadow: 0 0 6px rgba(255,255,255,.25); }
+.cluster.is-muted .cl-name { color: var(--fg-mute); font-style: italic; }
+.cluster.is-muted input[type="color"] { opacity: .45; }
 .cluster input[type="color"] {
   appearance: none;
   width: 22px; height: 22px;
@@ -1129,6 +1145,9 @@ input[type="range"]::-moz-range-thumb {
 }
 .tswatch.none { background: transparent; border-style: dashed; border-color: #c2c2ba; }
 .term-cell > div { min-width: 0; }
+
+.dtable td.act { white-space: nowrap; }
+.dtable td.act .mini + .mini { margin-left: 4px; }
 
 .dtable .src {
   font-family: var(--font-mono);
