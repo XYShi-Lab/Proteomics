@@ -303,6 +303,18 @@ Please cite these resources if their results appear in your paper.
 
 ---
 
+## Working on the code
+
+`AGENTS.md` is the entry point for anyone — human or AI coding agent — changing
+this code: conventions, invariants, and how to build and test. Alongside it:
+
+| | |
+|---|---|
+| `docs/ARCHITECTURE.md` | module contracts, data flow, the render pipeline |
+| `docs/DOMAIN.md` | the proteomics you need to not get the science wrong |
+| `docs/EXTERNAL-APIS.md` | what the four external services return, and how failure is handled |
+| `tests/` | `node tests/run.mjs` — 56 checks, no network needed |
+
 ## Project layout
 
 ```
@@ -322,6 +334,9 @@ js/app.js               state, wiring, interaction
 data/demo_proteomics.csv  the example dataset as a file
 tools/build-single.js   bundles all of the above into one .html file
 volcano-studio.html     the single-file build (generated - do not edit by hand)
+AGENTS.md               orientation for anyone changing the code
+docs/                   architecture, domain background, external API contracts
+tests/run.mjs           self-contained Playwright smoke suite
 ```
 
 No build step, no package manager, no third-party runtime dependencies. The

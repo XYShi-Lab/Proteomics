@@ -1,0 +1,16 @@
+{
+  "name": "shi-lab-volcano-and-go",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive volcano plots for proteomics, with GO overlays and pathway enrichment. Runs entirely in the browser.",
+  "//": "DEV TOOLING ONLY. The application itself has zero runtime dependencies and needs no install or build step to run - open index.html. Nothing here is shipped to the browser.",
+  "scripts": {
+    "build": "node tools/build-single.js",
+    "test": "node tests/run.mjs",
+    "test:headed": "node tests/run.mjs --headed",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
